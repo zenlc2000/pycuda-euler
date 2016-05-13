@@ -5,7 +5,7 @@ import numpy as np
 from numpy import array
 import logging
 import logging.config
-
+from parse_fasta import Fasta
 
 def parse_fastq ( filename ):
     """
@@ -67,9 +67,9 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     kmerMap = {}
     lmerMap = {}
     # buffer = np.fromstring('\n'.join(readBuffer), count=len(readBuffer), dtype=np.str)
-    buffer = np.array ( readBuffer, dtype = str )
+    buffer = np.array(readBuffer, dtype = str)
     nbr_values = buffer.size * buffer.dtype.itemsize
-    d_lmers = np.zeros ( (nbr_values,), dtype = np.uint64 )
+    d_lmers = np.empty_like(buffer)
     d_pkmers = np.empty_like ( d_lmers )
     d_skmers = np.empty_like ( d_lmers )
     h_lmersF = np.empty_like ( d_lmers )
@@ -87,8 +87,9 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     kmerBitMask = 0
 
     # bufferSize = sys.getsizeof(np.uint8) * readLength * readToProcess
-    bufferSize = buffer.size
+    bufferSize = sum(sys.getsizeof(seq) for seq in readBuffer)
     entriesCount = readLength * readCount
+    readLength = [len(seq) for seq in readBuffer]
 
     for _ in range ( 0, (lmerLength - 1) * 2 ):
         kmerBitMask = (kmerBitMask << 1) | 1
@@ -97,13 +98,7 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     # Originally a loop slicing readBuffer into chunks then process each chunk
 
     while readProcessed < readCount:
-        # buffer = np.fromstring(''.join(readBuffer), dtype='uint8')
-        # d_buffer = cuda.to_device(buffer)
-        # read = np.empty_like(buffer)
-        # d_read = cuda.to_device(read)
-        # dlmers = cuda.to_device(d_lmers)
-
-        enc.encode_lmer_device ( buffer, bufferSize, readCount, readLength, d_lmers, lmerLength, entriesCount )
+        enc.encode_lmer_device(buffer, bufferSize, readCount, d_lmers, lmerLength, readLength, readCount)
         # np.append(d_lmers, dlmers)
         #
         # # extract kmer
@@ -335,10 +330,12 @@ def assemble2 ( infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tup
     # unsigned int 	vertexCount=0;
     # unsigned int 	readCount=0;
 
-    readBuffer = read_fastq ( infile )
+    buffer = Fasta(open(infile))
 
-    readCount = len ( readBuffer )
-    readLength = len ( readBuffer[ 0 ] )
+    readBuffer = [s.sequence for s in buffer]
+
+    readCount = len(readBuffer)
+    readLength = [len(seq) for seq in readBuffer]
     evList = [ ]
     eeList = [ ]
     levEdgeList = [ ]
@@ -391,4 +388,4 @@ if __name__ == '__main__':
     # 		unsigned int ec_tuple_size	//ec tuple size
     # 		){
 
-    assemble2 ( results.input_filename, results.output_filename, 17, False, 20, 20 )
+    assemble2(results.input_filename, results.output_filename, 17, False, 20, 20)
