@@ -15,6 +15,8 @@ module_logger = logging.getLogger('eulercuda.pyencode')
 # TODO: figure out how to figure out max threads for any device
 
 def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, readLength,entriesCount):
+    logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
+    logger.info("started.")
     mod = SourceModule("""
     #include <stdio.h>
     typedef unsigned  long long KEY_T ;
@@ -81,18 +83,20 @@ def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, read
     # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
-    print(block_dim, grid_dim)
+    logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
     drv.memcpy_htod(gpu_lmerLength, np_lmerLength)
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
+        logging.info("Going to GPU.")
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
                     np_lmerLength,
                     block = block_dim,
                     grid = grid_dim,
                     shared = max(readLength) + 31)
-        print(d_lmers.tolist()) # TODO: fix this
+        lmers_list = d_lmers.tolist() # TODO: fix this
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
+    logging.info("finished. Leaving.")
 
 def compute_kmer_device (lmers):
     mod = SourceModule("""

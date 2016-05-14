@@ -69,7 +69,7 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     # buffer = np.fromstring('\n'.join(readBuffer), count=len(readBuffer), dtype=np.str)
     buffer = np.array(readBuffer, dtype = str)
     nbr_values = buffer.size * buffer.dtype.itemsize
-    d_lmers = np.empty_like(buffer)
+    d_lmers = np.empty(buffer.size, dtype = np.uint64)
     d_pkmers = np.empty_like ( d_lmers )
     d_skmers = np.empty_like ( d_lmers )
     h_lmersF = np.empty_like ( d_lmers )
@@ -229,7 +229,7 @@ def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evLi
     d_levEdge = [ ]
     d_entEdge = [ ]
 
-    py_buffer = '\n'.join ( readBuffer )
+
 
     # May need to return unpacked tuple of integer variables
     lmerCount, kmerCount = readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, h_lmerKeys, h_lmerValues,
@@ -239,10 +239,6 @@ def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evLi
     # setStatItem(NM_LMER_COUNT, lmerCount);
     # setStatItem(NM_KMER_COUNT, kmerCount);
 
-    # lots of memory movement to Device
-    d_lmerKeys = np.empty ( lmerCount * cython.sizeof ( cython.unsignedlonglong ) )
-    d_lmerValues = [ ]
-    # from gpuhash & gpuhash2
 
 
     # TODO: return d_TK,  d_TV, tableLength,  d_bucketSize,  bucketCount)
@@ -318,7 +314,7 @@ def assemble2 ( infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tup
     """
     # TODO: figure out logging
     # TODO: Unit testing
-
+    logging.getLogger('eulercuda.assemble2')
     # for performance reasons, may want to make these Numpy arrays
 
     # char * 		readBuffer=NULL;
@@ -329,12 +325,13 @@ def assemble2 ( infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tup
     # unsigned int  	edgeCount=0;
     # unsigned int 	vertexCount=0;
     # unsigned int 	readCount=0;
-
+    logging.info('Openinp %s' % (infile))
     buffer = Fasta(open(infile))
 
     readBuffer = [s.sequence for s in buffer]
 
     readCount = len(readBuffer)
+    logging.info("Got %s reads." % (readCount))
     readLength = [len(seq) for seq in readBuffer]
     evList = [ ]
     eeList = [ ]
