@@ -86,7 +86,6 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
         readToProcess = CUDA_NUM_READS
     kmerBitMask = 0
 
-    # bufferSize = sys.getsizeof(np.uint8) * readLength * readToProcess
     bufferSize = sum(sys.getsizeof(seq) for seq in readBuffer)
     entriesCount = readLength * readCount
     readLength = [len(seq) for seq in readBuffer]
@@ -96,23 +95,14 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
         # print("kmerBitMask = " + str(kmerBitMask))
     readProcessed = 0
     # Originally a loop slicing readBuffer into chunks then process each chunk
-
+    logging.info("Start encoding")
     while readProcessed < readCount:
-        enc.encode_lmer_device(buffer, bufferSize, readCount, d_lmers, lmerLength, readLength, readCount)
-        # np.append(d_lmers, dlmers)
-        #
-        # # extract kmer
-        # pyencoder.compute_kmer(d_lmers, d_pkmers, d_skmers, h_lmersF, h_pkmersF, h_skmersF, kmerBitMask, readLength, entriesCount)
-        #
-        #
-        #
-        # # reverse
-        # pyencoder.encode_lmer_complement(buffer, bufferSize, readLength, d_lmers, lmerLength, entriesCount)
-        #
-        # # extract kmer
-        # pyencoder.compute_kmer(d_lmers, d_pkmers, d_skmers, h_lmersR, h_pkmersR, h_skmersR, kmerBitMask, readLength, entriesCount)
+        enc.encode_lmer_device(buffer, bufferSize, readCount, d_lmers, readLength, lmerLength, readCount)
 
+        enc.compute_kmer_device(d_lmers,d_pkmers, d_skmers, kmerBitMask)
+        enc.compute_lmer_complement_device(buffer, bufferSize, readCount, d_lmers, readLength, lmerLength, readCount)
 
+        logging.info("Finished with Encoder.")
 
         lmerEmpty, kmerEmpty = 0, 0
 

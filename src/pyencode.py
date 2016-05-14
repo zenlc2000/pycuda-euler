@@ -9,7 +9,8 @@ module_logger = logging.getLogger('eulercuda.pyencode')
 
 # Globals
 
-def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, readLength,entriesCount):
+
+def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, readLength, lmerLength,entriesCount):
     logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -34,7 +35,6 @@ def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, read
             {2,8,32,128},
             {3,12,48,192},
     };
-
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
 
@@ -88,13 +88,20 @@ def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, read
                     block = block_dim,
                     grid = grid_dim,
                     shared = max(readLength) + 31)
-        lmers_list = d_lmers.tolist() # TODO: fix this
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
     logging.info("finished. Leaving.")
 
-def compute_kmer_device (lmers):
+
+def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
+    logger = logging.getLogger('eulercuda.pyencode.compute_kmer_device')
+    logger.info("started.")
     mod = SourceModule("""
+    typedef unsigned  long long KEY_T ;
+    typedef KEY_T * KEY_PTR ;
+    #define LMER_PREFIX(lmer,bitMask) ((lmer & (bitMask<<2))>>2)
+    #define LMER_SUFFIX(lmer,bitMask) ((lmer & bitMask))
+
     __global__ void computeKmerDevice(
             KEY_PTR lmers,
             KEY_PTR pkmers,
@@ -113,66 +120,75 @@ def compute_kmer_device (lmers):
     }
     """)
     compute_kmer = mod.get_function("computeKmerDevice")
-    pkmers = np.zeroes_like(lmers)
-    skmers = np.zeroes_like(lmers)
+    # pkmers = np.zeroes_like(lmers)
+    # skmers = np.zeroes_like(lmers)
 
-    block_dim, grid_dim = getOptimalLaunchConfigCustomized(len(lmers))
+    block_dim, grid_dim = getOptimalLaunchConfiguration(len(lmers))
+    if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
+        logging.info("Going to GPU.")
+        compute_kmer(
+            drv.In(lmers), drv.Out(pkmers), drv.Out(skmers), np.uint64(kmerBitMask),
+            block = block_dim, grid = grid_dim
+        )
+    logging.info("leaving.")
 
-    compute_kmer(
-        drv.In(lmers), drv.Out(pkmers), drv.Out(skmers),
-        block = block_dim, grid = grid_dim
-    )
-    return pkmers, skmers
 
-
-def compute_lmer_complement_device (readBuffer, bufferSize, readCount, readLength, d_lmers, lmerLength, entriesCount):
+def compute_lmer_complement_device (readBuffer, bufferSize, readCount,d_lmers, readLength, lmerLength, entriesCount):
+    logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
+    logger.info("started.")
     mod = SourceModule("""
+    __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
+    __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
+    typedef unsigned  long long KEY_T ;
+    typedef KEY_T * KEY_PTR ;
+
     __global__ void encodeLmerComplementDevice(
             char  * buffer,
-            const unsigned int buffSize,
-            const unsigned int readLength,
             KEY_PTR lmers,
             const unsigned int lmerLength
             )
     {
 
-        extern __shared__ char dnaRead[];//have to fix it
-        const unsigned int tid=threadIdx.x;
-        const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
-        KEY_T lmer=0;
-        KEY_T temp=0;
+        extern __shared__ char dnaRead[];
+        const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
+        const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
+        //unsigned int lmerLength = 0;
+        KEY_T lmer = 0;
+        KEY_T temp = 0;
 
-        dnaRead[tid]=buffer[rOffset+tid];
+       // lmerLength = d_lmerLength[tid];
+        dnaRead[tid] = buffer[row + tid];
+
         __syncthreads();
-        dnaRead[tid]=codeR[dnaRead[tid] & 0x07];
+
+        dnaRead[tid] = codeR[dnaRead[tid] & 0x07];
         __syncthreads();
-        for(unsigned int i =0; i< lmerLength; i++)
+
+        for (unsigned int i = 0; i < lmerLength; i++)
         {
-            temp=((KEY_T)dnaRead[(tid+i)%blockDim.x]);
-            lmer = (temp<<(i<<1)) | lmer;
+            temp = ((KEY_T)dnaRead[(tid + i) % blockDim.x]);
+            lmer = (temp << (i << 1)) | lmer;
         }
-        lmers[rOffset+tid]=lmer;
+        lmers[row + tid] = lmer;
 
     }
-    """)
+    """, keep = True)
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
     block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
-
-    buffer = np.fromstring(''.join(readBuffer), dtype = 'uint8')
-
-    lmers = np.zeros(len(readBuffer), dtype = 'uint64')
-
-    kmerBitMask = 0
-    for _ in range(0, (lmerLength - 1) * 2):
-        kmerBitMask = (kmerBitMask << 1) | 1
-
-    encode_lmer_complement(
-        drv.In(buffer), drv.In(bufferSize), drv.In(readLength), drv.InOut(lmers), drv.In(lmerLength),
-        block = (), grid = ()  # TODO: figure out block & grid values
-    )
-
-    return lmers
+    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_lmerLength = np.uint(lmerLength)
+    if isinstance(readBuffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
+        logging.info("Going to GPU.")
+        encode_lmer_complement(
+            drv.In(readBuffer),  drv.InOut(d_lmers), np_lmerLength,
+            block = block_dim, grid = grid_dim,  shared = max(readLength) + 31
+        )
+    else:
+        print("Problem with data to GPU")
+        logging.info("problem with data to GPU.")
+    logging.info("Finished. Leaving.")
 
 
 # getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
