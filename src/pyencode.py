@@ -9,11 +9,6 @@ module_logger = logging.getLogger('eulercuda.pyencode')
 
 # Globals
 
-
-
-
-# TODO: figure out how to figure out max threads for any device
-
 def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, readLength,entriesCount):
     logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
     logger.info("started.")
@@ -61,17 +56,17 @@ def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, lmerLength, read
         KEY_T lmer = 0;
 
         dnaRead[tid] = buffer[row + tid];
-
+        __syncthreads();
         for (unsigned int i = 0; i < 8; i++)    //calculate lmer
         {
-            lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[dnaRead[threadIdx.x+i*4]& 0x07]][3] |
-                                shifter[codeF[dnaRead[threadIdx.x+i*4+1]& 0x07]][2] |
-                                shifter[codeF[dnaRead[threadIdx.x+i*4+2]& 0x07]][1] |
-                                codeF[dnaRead[threadIdx.x+i*4+3] & 0x07]) ) ;
+            lmer = (lmer<< 8) |	((KEY_T)(shifter[codeF[dnaRead[threadIdx.x + i * 4] & 0x07]][3] |
+                                shifter[codeF[dnaRead[threadIdx.x + i * 4 + 1] & 0x07]][2] |
+                                shifter[codeF[dnaRead[threadIdx.x + i * 4 + 2] & 0x07]][1] |
+                                codeF[dnaRead[threadIdx.x + i * 4 + 3] & 0x07]) ) ;
         }
-        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
+        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength - 1];
 
-        lmers[row+tid]=lmer;
+        lmers[row + tid] = lmer;
     }
     """)
 
@@ -107,12 +102,12 @@ def compute_kmer_device (lmers):
             KEY_T validBitMask
         )
     {
-        const unsigned int tid=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
+        const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
         KEY_T lmer;
         //fetch lmer
-        lmer=lmers[tid];
+        lmer = lmers[tid];
         //find prefix
-        pkmers[tid]=LMER_PREFIX(lmer,validBitMask);
+        pkmers[tid] = LMER_PREFIX(lmer,validBitMask);
         //find suffix
         skmers[tid] = LMER_SUFFIX(lmer,validBitMask);
     }
@@ -121,9 +116,11 @@ def compute_kmer_device (lmers):
     pkmers = np.zeroes_like(lmers)
     skmers = np.zeroes_like(lmers)
 
+    block_dim, grid_dim = getOptimalLaunchConfigCustomized(len(lmers))
+
     compute_kmer(
         drv.In(lmers), drv.Out(pkmers), drv.Out(skmers),
-        block = (), grid = ()  # TODO: figure out block & grid values
+        block = block_dim, grid = grid_dim
     )
     return pkmers, skmers
 
@@ -160,7 +157,7 @@ def compute_lmer_complement_device (readBuffer, bufferSize, readCount, readLengt
     """)
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
-
+    block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
 
     buffer = np.fromstring(''.join(readBuffer), dtype = 'uint8')
 
