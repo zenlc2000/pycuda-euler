@@ -1,6 +1,7 @@
 import sys
 import argparse
 import pyencode as enc
+import pydebruijn as db
 import numpy as np
 from numpy import array
 import logging
@@ -235,12 +236,24 @@ def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evLi
     # TODO: Test pygpuhash
     # pygpuhash.create_hash_table(d_kmerKeys, d_kmerValues, kmerCount)
 
+# TODO:
+#       unsigned int * ecount,
+# 		KEY_PTR d_lmerKeys, //in lmer keys
+# 		VALUE_PTR d_lmerValues, //in lmer values
+# 		unsigned int lmerCount, //in total lmers
+# 		KEY_PTR d_kmerKeys, //in
+# 		unsigned long kmerCount, //in  total kmers
+# 		unsigned int l, //in k
+# 		KEY_PTR d_TK,
+# 		VALUE_PTR d_TV,
+# 		unsigned int * d_bucketSeed,
+# 		unsigned int bucketCount,
+# 		EulerVertex ** d_ev, //out
+# 		unsigned int ** d_l, //out
+# 		unsigned int ** d_e, //out
+# 		EulerEdge ** d_ee //out
 
-#    constructDebruijnGraphDevice(d_lmerKeys, d_lmerValues, lmerCount,
-#        d_kmerKeys, kmerCount, l, d_TK, d_TV, d_bucketSize, bucketCount,
-#        & d_ev, & d_levEdge, & d_entEdge, & d_ee, edgeCount);
-
-
+    db.construct_debruijn_graph_device()
 # d_bucketSeed needs to
 
 # pydebruijn.construct_Debruijn_Graph_Device(d_lmerKeys, d_lmerValues,lmerCount,
