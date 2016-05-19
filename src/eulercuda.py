@@ -1,49 +1,50 @@
 import sys
 import argparse
-import pyencode as enc
-import pydebruijn as db
+import encoder.pyencode as enc
+import debruijn.pydebruijn as db
 import numpy as np
 from numpy import array
 import logging
 import logging.config
-from parse_fasta import Fasta
+from fastareader.parse_fasta import Fasta
 
-def parse_fastq ( filename ):
+
+def parse_fastq (filename):
     """
     Read fastq formatted <filename> and return a dictionary of
     read_name : read
     """
-    file = open ( filename )
+    file = open(filename)
     result = {}
     current_name = None
-    for i, line in enumerate ( file ):
+    for i, line in enumerate(file):
         if i % 4 == 0:
-            current_name = line.rstrip ( '\n' )
+            current_name = line.rstrip('\n')
         if i % 4 == 1:
-            result[ current_name ] = line.rstrip ( '\n' )
+            result[current_name] = line.rstrip('\n')
         if i % 4 == 3:
-            print ( 'quality is ' + line.rstrip ( '\n' ) )
+            print('quality is ' + line.rstrip('\n'))
     return result
 
 
-def read_fastq ( filename ):
+def read_fastq (filename):
     """
     Read fastq formatted <filename> and return a list of reads
     """
-    with open ( filename, "r" ) as infile:
-        result = [ ]
-        for i, line in enumerate ( infile ):
+    with open(filename, "r") as infile:
+        result = []
+        for i, line in enumerate(infile):
             if i % 4 == 1:
-                result.append ( line.rstrip ( '\n' ) )
+                result.append(line.rstrip('\n'))
         return result
 
 
-def doErrorCorrection ( readBuffer, readCount, ec_tuple_size, max_ec_pos ):
+def doErrorCorrection (readBuffer, readCount, ec_tuple_size, max_ec_pos):
     return readCount
 
 
-def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
-                         kmerValues, kmerCount ):
+def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
+                        kmerValues, kmerCount):
     """
     char * d_reads = NULL;
     KEY_PTR h_lmersF = NULL;
@@ -71,14 +72,8 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     buffer = np.array(readBuffer, dtype = str)
     nbr_values = buffer.size * buffer.dtype.itemsize
     d_lmers = np.empty(buffer.size, dtype = np.uint64)
-    d_pkmers = np.empty_like ( d_lmers )
-    d_skmers = np.empty_like ( d_lmers )
-    h_lmersF = np.empty_like ( d_lmers )
-    h_pkmersF = np.empty_like ( d_lmers )
-    h_skmersF = np.empty_like ( d_lmers )
-    h_lmersR = np.empty_like ( d_lmers )
-    h_pkmersR = np.empty_like ( d_lmers )
-    h_skmersR = np.empty_like ( d_lmers )
+    d_pkmers = np.empty_like(d_lmers)
+    d_skmers = np.empty_like(d_lmers)
 
     CUDA_NUM_READS = 1024 * 32
     if readCount < CUDA_NUM_READS:
@@ -91,17 +86,26 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     entriesCount = readLength * readCount
     readLength = [len(seq) for seq in readBuffer]
 
-    for _ in range ( 0, (lmerLength - 1) * 2 ):
+    for _ in range(0, (lmerLength - 1) * 2):
         kmerBitMask = (kmerBitMask << 1) | 1
         # print("kmerBitMask = " + str(kmerBitMask))
     readProcessed = 0
     # Originally a loop slicing readBuffer into chunks then process each chunk
+    # Theoretically shouldn't have to do this on distrib. system.
     logging.info("Start encoding")
     while readProcessed < readCount:
         enc.encode_lmer_device(buffer, bufferSize, readCount, d_lmers, readLength, lmerLength, readCount)
 
-        enc.compute_kmer_device(d_lmers,d_pkmers, d_skmers, kmerBitMask)
+        enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask)
+        h_lmersF = np.array(d_lmers)
+        h_pkmersF = np.array(d_pkmers)
+        h_skmersF = np.array(d_skmers)
+
         enc.compute_lmer_complement_device(buffer, bufferSize, readCount, d_lmers, readLength, lmerLength, readCount)
+        enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask)
+        h_lmersR = np.array(d_lmers)
+        h_pkmersR = np.array(d_pkmers)
+        h_skmersR = np.array(d_skmers)
 
         logging.info("Finished with Encoder.")
 
@@ -110,45 +114,48 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
         # Here he fills the kmerMap and lmerMap with a nested for loop
         # for j in range(readToProcess):
         #     for i in range(validLmerCount):
-        for index in range ( readToProcess ):
+        for index in range(readToProcess):
             # index = j * readLength + i
-            kmerMap[ h_pkmersF[ index ] ] = 1
-            kmerMap[ h_skmersF[ index ] ] = 1
-            kmerMap[ h_pkmersR[ index ] ] = 1
-            kmerMap[ h_skmersR[ index ] ] = 1
+            kmerMap[h_pkmersF[index]] = 1
+            kmerMap[h_skmersF[index]] = 1
+            kmerMap[h_pkmersR[index]] = 1
+            kmerMap[h_skmersR[index]] = 1
 
-            if h_lmersF[ index ] == 0:
+            if h_lmersF[index] == 0:
                 lmerEmpty += 1
             else:
-                if lmerMap.get ( h_lmersF[ index ] ) == None:
-                    lmerMap[ h_lmersF[ index ] ] = 1
+                if lmerMap.get(h_lmersF[index]) == None:
+                    lmerMap[h_lmersF[index]] = 1
                 else:
-                    lmerMap[ h_lmersF[ index ] ] += 1
-            if h_lmersR[ index ] == 0:
+                    lmerMap[h_lmersF[index]] += 1
+            if h_lmersR[index] == 0:
                 lmerEmpty += 1
             else:
-                if lmerMap.get ( h_lmersR[ index ] ) == None:
-                    lmerMap[ h_lmersR[ index ] ] = 1
+                if lmerMap.get(h_lmersR[index]) == None:
+                    lmerMap[h_lmersR[index]] = 1
                 else:
-                    lmerMap[ h_lmersR[ index ] ] += 1
+                    lmerMap[h_lmersR[index]] += 1
         readProcessed += readToProcess
-        readToProcess = readCount - readToProcess
+        readToProcess -= readCount
         if readCount < CUDA_NUM_READS:
             readToProcess = readCount
         else:
             readToProcess = CUDA_NUM_READS
             # End of chunking loop
 
-    kmerCount = len ( kmerMap ) + kmerEmpty
+    kmerCount = len(kmerMap) + kmerEmpty
     # TODO: Log message with kmer count
-    print ( 'kmer count = ' + kmerCount )
+    logger.info('kmer count = %d' % (kmerCount))
 
     # kmerKeys = []
     # kmerValues = []
     #
-    for index, k, v in enumerate ( kmerMap.items ( ) ):
-        kmerKeys[ index ] = k
-        kmerValues[ index ] = index
+    # I know, I know. I couldn't get enumerate to work.
+    index = 0
+    for k, v in kmerMap.items():
+        kmerKeys.append(k)
+        kmerValues.append(index)
+        index += 1
 
     # original code has if below, but I don't see that it will ever be executed
     #     if (kmerEmpty > 0){
@@ -156,22 +163,21 @@ def readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, lmerKeys
     #     ( * kmerValues)[index]=index;
     #     }
 
-    lmerCount = len ( lmerMap ) + lmerEmpty
-    # lmerKeys = []
-    # lmerValues = []
+    lmerCount = len(lmerMap) + lmerEmpty
     #
-    lmerKeys = lmerMap.keys ( )
-    lmerValues = lmerMap.values ( )
+    lmerKeys = [key for key in lmerMap.keys()]
+    lmerValues = [value for value in lmerMap.values()]
 
+    # lmerKeys = t_lmerKeys.
     if lmerEmpty > 0:
-        lmerKeys[ len ( lmerMap ) ] = 0
-        lmerValues[ len ( lmerMap ) ] = lmerEmpty
+        lmerKeys[len(lmerMap) - 1] = 0
+        lmerValues[len(lmerMap) - 1] = lmerEmpty
 
-    return lmerCount, kmerCount
+    return [lmerCount, kmerCount, lmerKeys, lmerValues, kmerKeys, kmerValues]
 
 
-def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,
-                             edgeCountList, vertexCountList ):
+def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,
+                            edgeCountList, vertexCountList):
     """
     ///variables
 
@@ -199,61 +205,74 @@ def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evLi
     unsigned int * d_entEdge=NULL;
 
     """
-    h_lmerKeys = [ ]
-    h_lmerValues = [ ]
+    h_lmerKeys = []
+    h_lmerValues = []
 
     lmerCount = 0
-    h_kmerKeys = [ ]
-    h_kmerValues = [ ]
-    d_kmerKeys = [ ]
-    d_kmerValues = [ ]
+    h_kmerKeys = []
+    h_kmerValues = []
+    d_kmerKeys = []
+    d_kmerValues = []
     kmerCount = 0
-    d_TK = [ ]
-    d_TV = [ ]
+    d_TK = []
+    d_TV = []
     tableLength = 0
     bucketCount = 0
-    d_bucketSize = [ ]
+    d_bucketSize = []
 
     coverage = 20
-    d_ev = [ ]
-    d_ee = [ ]
-    d_levEdge = [ ]
-    d_entEdge = [ ]
-
-
+    d_ev = []
+    d_ee = []
+    d_levEdge = []
+    d_entEdge = []
 
     # May need to return unpacked tuple of integer variables
-    lmerCount, kmerCount = readLmersKmersCuda ( readBuffer, readLength, readCount, lmerLength, h_lmerKeys, h_lmerValues,
-                                                lmerCount, h_kmerKeys,
-                                                h_kmerValues, kmerCount )
+    vals = readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, h_lmerKeys, h_lmerValues,
+                                              lmerCount, h_kmerKeys,
+                                              h_kmerValues, kmerCount)
+    lmerCount = vals[0]
+    kmerCount = vals[1]
+    h_lmerKeys = vals[2]
+    h_lmerValues = vals[3]
+    h_kmerKeys = vals[4]
+    h_kmerValues = vals[5]
     # initDevice()
     # setStatItem(NM_LMER_COUNT, lmerCount);
     # setStatItem(NM_KMER_COUNT, kmerCount);
 
 
-
+    logger.info('lmerCount = %d, kmerCount = %d' % (lmerCount, kmerCount))
     # TODO: return d_TK,  d_TV, tableLength,  d_bucketSize,  bucketCount)
     # TODO: Test pygpuhash
     # pygpuhash.create_hash_table(d_kmerKeys, d_kmerValues, kmerCount)
 
-# TODO:
-#       unsigned int * ecount,
-# 		KEY_PTR d_lmerKeys, //in lmer keys
-# 		VALUE_PTR d_lmerValues, //in lmer values
-# 		unsigned int lmerCount, //in total lmers
-# 		KEY_PTR d_kmerKeys, //in
-# 		unsigned long kmerCount, //in  total kmers
-# 		unsigned int l, //in k
-# 		KEY_PTR d_TK,
-# 		VALUE_PTR d_TV,
-# 		unsigned int * d_bucketSeed,
-# 		unsigned int bucketCount,
-# 		EulerVertex ** d_ev, //out
-# 		unsigned int ** d_l, //out
-# 		unsigned int ** d_e, //out
-# 		EulerEdge ** d_ee //out
+    # TODO:
+    #       unsigned int * ecount,
+    # 		KEY_PTR d_lmerKeys, //in lmer keys
+    # 		VALUE_PTR d_lmerValues, //in lmer values
+    # 		unsigned int lmerCount, //in total lmers
+    # 		KEY_PTR d_kmerKeys, //in
+    # 		unsigned long kmerCount, //in  total kmers
+    # 		unsigned int l, //in k
+    # 		KEY_PTR d_TK,
+    # 		VALUE_PTR d_TV,
+    # 		unsigned int * d_bucketSeed,
+    # 		unsigned int bucketCount,
+    # 		EulerVertex ** d_ev, //out
+    # 		unsigned int ** d_l, //out
+    # 		unsigned int ** d_e, //out
+    # 		EulerEdge ** d_ee //out
 
-    db.construct_debruijn_graph_device()
+    db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
+			h_kmerKeys, kmerCount, lmerLength, d_TK, d_TV, d_bucketSize, bucketCount,
+			d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
+
+
+
+        # h_lmerKeys, h_lmerValues,lmerCount,h_kmerKeys,kmerCount,lmerLength,d_TK,
+        #                                d_TV,d_bucketSize,bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
+#       d_kmerKeys,kmerCount,l,d_TK, d_TV,d_bucketSize,bucketCount
+
 # d_bucketSeed needs to
 
 # pydebruijn.construct_Debruijn_Graph_Device(d_lmerKeys, d_lmerValues,lmerCount,
@@ -295,23 +314,23 @@ def constructDebruijnGraph ( readBuffer, readCount, readLength, lmerLength, evLi
 # unsigned int partialContigTimer = 0;
 
 
-def findEulerTour ( evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile ):
+def findEulerTour (evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile):
     # TODO: Figure out what to do with these variables
     # findEulerDevice(d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCount, & d_cg_edge,& cg_edgecount, & cg_vertexcount, l);
-    d_ev = array ( evList )
-    d_levEdge = array ( levEdgeList )
-    d_entEdge = array ( entEdgeList )
-    d_ee = array ( eeList )
+    d_ev = array(evList)
+    d_levEdge = array(levEdgeList)
+    d_entEdge = array(entEdgeList)
+    d_ee = array(eeList)
 
     # d_cg_edge, cg_vertexcount, cg_edgecount MAY be the output variables.
-    pyeulertour.find_euler_device ( d_ev, d_levEdge, d_entEdge, vertexCount, d_ee )
+    pyeulertour.find_euler_device(d_ev, d_levEdge, d_entEdge, vertexCount, d_ee)
     # need to get cg_edgecount, d_cg_edge back
     if cg_edgecount > 0:
-        cg_edge = array ( d_cg_edge )
-        treeSize = pyeulertour.find_spanning_tree ( cg_edge, cg_edgecount, cg_vertexcount )
+        cg_edge = array(d_cg_edge)
+        treeSize = pyeulertour.find_spanning_tree(cg_edge, cg_edgecount, cg_vertexcount)
 
 
-def assemble2 ( infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple_size ):
+def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple_size):
     """
     Do the assemble
     """
@@ -336,18 +355,18 @@ def assemble2 ( infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tup
     readCount = len(readBuffer)
     logging.info("Got %s reads." % (readCount))
     readLength = [len(seq) for seq in readBuffer]
-    evList = [ ]
-    eeList = [ ]
-    levEdgeList = [ ]
-    entEdgeList = [ ]
-    edgeCountList = [ ]
-    vertexCountList = [ ]
+    evList = []
+    eeList = []
+    levEdgeList = []
+    entEdgeList = []
+    edgeCountList = []
+    vertexCountList = []
 
     if readCount > 0:
         if errorCorrection:
-            readCount = doErrorCorrection ( readBuffer, readCount, ec_tuple_size, max_ec_pos )
-        constructDebruijnGraph ( readBuffer, readCount, readLength,
-                                 lmerLength, evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList )
+            readCount = doErrorCorrection(readBuffer, readCount, ec_tuple_size, max_ec_pos)
+        constructDebruijnGraph(readBuffer, readCount, readLength,
+                               lmerLength, evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList)
         # findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList, lmerLength, outfile)
 
 
@@ -357,20 +376,20 @@ if __name__ == '__main__':
     logging.config.fileConfig('logging.cfg')
     logger = logging.getLogger('eulercuda')
     logger.info('Program started')
-    parser = argparse.ArgumentParser ( )
+    parser = argparse.ArgumentParser()
 
-    parser.add_argument ( '-i', action = 'store', dest = 'input_filename',
-                          help = 'Input Fie Name' )
-    parser.add_argument ( '-o', action = 'store', dest = 'output_filename',
-                          help = 'Output File Name' )
-    parser.add_argument ( '-k', action = 'store', dest = 'k', type = int,
-                          help = 'kmer size' )
-    parser.add_argument ( '-d', action = 'store_true', default = False,
-                          help = 'Use DDFS' )
-    results = parser.parse_args ( )
+    parser.add_argument('-i', action = 'store', dest = 'input_filename',
+                        help = 'Input Fie Name')
+    parser.add_argument('-o', action = 'store', dest = 'output_filename',
+                        help = 'Output File Name')
+    parser.add_argument('-k', action = 'store', dest = 'k', type = int,
+                        help = 'kmer size')
+    parser.add_argument('-d', action = 'store_true', default = False,
+                        help = 'Use DDFS')
+    results = parser.parse_args()
     # Need to process commandline args. Probably just copy=paste from disco3
     if results.input_filename == '':
-        fname = '../data/read_1.fq'
+        fname = '../data/Ecoli_raw.fasta'
     else:
         fname = results.input_filename
     # readBuffer = read_fastq(fname)

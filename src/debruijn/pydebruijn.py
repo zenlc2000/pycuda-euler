@@ -7,7 +7,7 @@ from pycuda.compiler import SourceModule
 from pycuda.scan import ExclusiveScanKernel
 from pycuda.driver import device_attribute
 import logging
-from pyencode import getOptimalLaunchConfiguration
+from encoder.pyencode import getOptimalLaunchConfiguration
 
 module_logger = logging.getLogger('eulercuda.pydebruijn')
 
@@ -31,17 +31,80 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     typedef unsigned int        VALUE_T;
     typedef VALUE_T             *VALUE_PTR;
 
+    #define LARGE_PRIME 1900813
+    #define L2_SIZE 192
+    #define MAX_ITERATIONS 100
+    #define MAX_INT 0xffffffff
+    #define MAX_SEED_COUNT 25
+    #define C0  0x01010101
+    #define C1	0x12345678
+    #define C10 0xABCDEFAB
+    #define C11 0xCDEFABCD
+    #define C20 0xEFABCDEF
+    #define C21 0xBAFEDCBA
+    #define C30 0xFEDCBAFE
+    #define C31 0xDCBAFEDC
+    #define GET_KEY_INDEX(blockIdx,itemIdx) ((blockIdx)*MAX_BUCKET_ITEM+(itemIdx))
+    #define GET_VALUE_INDEX(blockIdx,itemIdx) ((blockIdx)*MAX_BUCKET_ITEM+(itemIdx))
+    #define MAX_BUCKET_ITEM (520)
+
+
+    __forceinline__ __device__ unsigned int hash_h(KEY_T  key, unsigned int bucketCount){
+        return ((C0+C1*key)% LARGE_PRIME )% bucketCount;
+    }
+
+    __forceinline__ __device__ unsigned int hash_g1(KEY_T key,unsigned int seed){
+        return ((C10^seed+(C11^seed)*key)% LARGE_PRIME )%L2_SIZE;
+    }
+    __forceinline__ __device__ unsigned int hash_g2(KEY_T key,unsigned int seed){
+        return ((C20^seed+(C21^seed)*key)% LARGE_PRIME )%L2_SIZE;
+    }
+    __forceinline__ __device__ unsigned int hash_g3(KEY_T key,unsigned int seed){
+        return ((C30^seed+(C31^seed)*key)% LARGE_PRIME )%L2_SIZE;
+    }
+
+    __forceinline__ __device__ VALUE_T getHashValue(KEY_T key,KEY_PTR TK,VALUE_PTR TV,unsigned int *bucketSize, unsigned int bucketCount)
+    {
+        unsigned int bucket=hash_h(key,bucketCount);
+        unsigned int l=0;
+        unsigned int r=bucketSize[bucket];
+        unsigned int mid;
+        while(l<r)
+        {
+            mid =l+((r-l)/2);
+            //if( (GET_HASH_KEY(T,bucket,mid)) < key){
+            if( TK[GET_KEY_INDEX(bucket,mid)] <  key)
+            {
+                l=mid+1;
+            }
+            else
+            {
+                r=mid;
+            }
+        }
+        //if(l < bucketSize[bucket] && GET_HASH_KEY(T,bucket,l)==key){
+        if(l < bucketSize[bucket] && TK[GET_KEY_INDEX(bucket,l)]==key)
+        {
+        //	return GET_HASH_VALUE(T,bucket,l);
+            return TV[GET_VALUE_INDEX(bucket,l)];
+        }
+        else
+        {
+            return MAX_INT;
+        }
+    }
+
     __global__ void debruijnCount(
-        KEY_PTR lmerKeys,                               /* lmer keys	*/
-        VALUE_PTR lmerValues,                           /* lmer frequency */
-        unsigned int lmerCount,                         /* total lmers */
-        KEY_PTR TK,                                     /* Keys' pointer for Hash table*/
-        VALUE_PTR TV,                                   /* Value pointer for Hash table*/
-        unsigned int * bucketSeed,                      /* bucketSize: size of each bucket (it should be renamed to bucketSize)*/
-        unsigned int bucketCount,                       /* total buckets */
-        unsigned int * lcount,                          /* leaving edge count array : OUT */
-        unsigned int * ecount,                          /* entering edge count array: OUT */
-        KEY_T validBitMask                              /* bit mask for K length encoded bits*/
+        KEY_PTR lmerKeys,
+        VALUE_PTR lmerValues,
+        unsigned int lmerCount,
+        KEY_PTR TK,
+        VALUE_PTR TV,
+        unsigned int * bucketSeed,
+        unsigned int bucketCount,
+        unsigned int * lcount,
+        unsigned int * ecount,
+        KEY_T validBitMask
     )
     {
 
@@ -68,9 +131,15 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
             ecount[(suffixIndex << 2) + transitionFrom] = lmerValue;
         }
     }
-    """)
-
-    debruijn_count = mod.get("debruijnCount")
+    """, keep = True)
+    d_lmerKeys = np.array(d_lmerKeys)
+    d_lmerValues = np.array(d_lmerKeys)
+    d_TK = np.array(d_TK)
+    d_TV = np.array(d_TV)
+    d_bucketSeed = np.array(d_bucketSeed)
+    # d_lcount = np.array(d_lcount)
+    # d_ecount = np.array(d_ecount)
+    debruijn_count = mod.get_function("debruijnCount")
     block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
     logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     debruijn_count(
@@ -80,7 +149,8 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     )
 
 
-def setup_vertices_device():
+def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
+                          bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart):
     """
     This kernel works on a k-mer (l-1mer) which are vertices of the graph.
     :return:
@@ -95,6 +165,14 @@ def setup_vertices_device():
     typedef unsigned int        VALUE_T;
     typedef VALUE_T             *VALUE_PTR;
 
+    typedef struct EulerVertex{
+        KEY_T	vid;
+        unsigned int  ep;
+        unsigned int  ecount;
+        unsigned int  lp;
+        unsigned int  lcount;
+    }EulerVertex;
+
     __global__ void setupVertices(KEY_PTR kmerKeys, unsigned int kmerCount,
             KEY_PTR TK, VALUE_PTR TV, unsigned int * bucketSeed,
             unsigned int bucketCount, EulerVertex * ev, unsigned int * lcount,
@@ -106,6 +184,7 @@ def setup_vertices_device():
         if (tid < kmerCount)
         {
             KEY_T key = kmerKeys[tid];
+            // from gpuhash_device.h
             VALUE_T index = getHashValue(key, TK, TV, bucketSeed, bucketCount);
 
             ev[index].vid = key;
@@ -118,9 +197,17 @@ def setup_vertices_device():
         }
     }
     """)
-    setup_vertices = mod.get("setupVertices")
+    setup_vertices = mod.get_function("setupVertices")
+    block_dim, grid_dim = getOptimalLaunchConfiguration(kmerCount)
+    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    setup_vertices(drv.In(d_kmerKeys), np.uintt(kmerCount), drv.In(d_TK), drv.In(d_TK),
+                   drv.In(d_bucketSeed), np.uint(bucketCount), drv.Out(d_ev), drv.In(d_lcount),
+                   drv.In(d_lstart), drv.In(d_ecount),drv.In(d_estart), block = block_dim, grid = grid_dim
+    )
 
-def setup_edges_device():
+
+def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
+                       d_l, d_e, d_ee, d_lstart, d_estart, validBitMask):
     """
     This kernel works on an l-mer, which represents an edge
     in the debruijn Graph.
@@ -136,6 +223,14 @@ def setup_edges_device():
     typedef KEY_T               *KEY_PTR;
     typedef unsigned int        VALUE_T;
     typedef VALUE_T             *VALUE_PTR;
+
+    typedef struct EulerEdge{
+        KEY_T eid;
+        unsigned int v1;
+        unsigned int v2;
+        unsigned int s;
+        unsigned int pad;
+    }EulerEdge;
 
     __global__ void setupEdges( KEY_PTR  lmerKeys,  VALUE_PTR  lmerValues,
              unsigned int *  lmerOffsets, const unsigned int lmerCount,
@@ -186,11 +281,19 @@ def setup_edges_device():
         }
     }
     """)
-    setup_edges = mod.get("setupEdges")
+    setup_edges = mod.get_function("setupEdges")
 
 
-def construct_debruijn_graph_device(ecount, d_lmerKeys, d_lmerValues, lmerCount, d_kmerKeys, kmerCount,lmer_count, l,
-                                    d_TK, d_TV, d_bucketSeed, bucketCount, d_ev, d_l, d_e, d_ee):
+    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
+    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    setup_edges(
+        drv.In(d_lmerKeys), drv.In(d_lmerValues), drv.InOut(d_lmerOffsets), np.uint(lmerCount), drv.In(d_TK),
+        drv.In(d_TV), drv.In(d_bucketSeed), np.uint(bucketCount), drv.In(d_l), drv.In(d_e), drv.In(d_e),
+        drv.Out(d_ee), drv.Out(d_lstart), drv.In(d_estart), drv.In(validBitMask), block = block_dim, grid = grid_dim
+    )
+
+def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerKeys, kmerCount, l,
+                                    d_TK, d_TV, d_bucketSeed, bucketCount, d_ev, d_l, d_e, d_ee, ecount):
     """
 
     :return:
@@ -208,10 +311,12 @@ def construct_debruijn_graph_device(ecount, d_lmerKeys, d_lmerValues, lmerCount,
     # mem_size = (kmerCount) * sizeof(unsigned int) *4; // 4 - tuple for each kmer
     mem_size = kmerCount * sys.getsizeof(np.uint) * 4
 
-    d_lcount = np.empty(mem_size, dtype = np.uint)
+    d_lcount = np.array(lmerCount, dtype = np.uint)
     d_lstart = np.empty_like(d_lcount)
-    d_ecount = np.empty(mem_size, dtype = np.uint)
+    d_ecount = np.array(ecount, dtype = np.uint)
     d_estart = np.empty_like(d_ecount)
+
+    # kernel call
     debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
                           d_lcount, d_ecount, valid_bitmask)
 
@@ -237,3 +342,24 @@ def construct_debruijn_graph_device(ecount, d_lmerKeys, d_lmerValues, lmerCount,
     np_d_ecount.get(d_estart)
 
     d_lmerOffsets = np.empty(lmerCount * sys.getsizeof(np.uint64))
+    np_d_lmerOffsets = knl(d_lmerValues)
+    np_d_lmerOffsets.get(d_lmerOffsets)
+
+    buffer = []
+    buffer.append(d_lmerOffsets + lmerCount - 1)
+    buffer.append(d_lmerValues + lmerCount - 1)
+    ecount = buffer[0] + buffer[1]
+
+    logger.info("debruijn vertex count:%d \ndebruijn edge count:%d" %
+                (kmerCount, ecount))
+# setupVertices<<<grid,block>>>(d_kmerKeys,kmerCount,d_TK,d_TV,d_bucketSeed,bucketCount,
+    # *d_ev,d_lcount,d_lstart,d_ecount,d_estart);
+    setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
+                          bucketCount, d_ev, d_lcount, d_lstart,d_ecount, d_estart)
+
+    # setupEdges << < grid, block >> > (
+    # d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount, *d_l, *d_e, *d_ee,
+    # d_lstart, d_estart, validBitMask);
+    setup_edges_device(d_lmerKeys,d_lmerValues,d_lmerOffsets,lmerCount, d_TK,d_TV,d_bucketSeed,
+                       bucketCount,d_l,d_e,d_ee,d_lstart,d_estart,valid_bitmask)
+    logger.info('Finished. Leaving.')
