@@ -7,7 +7,7 @@ def ingest(src):
     print(src)
 
 #@delayed(pure=True) 
-def run(src,k=21):
+def run(src,k=9):
     referenceAssembler.runAssembler(k,src)
     return 1
 

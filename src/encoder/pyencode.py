@@ -37,38 +37,40 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
 
-    __global__ void encodeLmerDevice(char  * buffer, KEY_PTR lmers, const unsigned int lmerLength)
+    __global__ void encodeLmerDevice(char  * buffer, KEY_PTR lmers, const unsigned int lmerLength, const unsigned int max)
     {
         extern __shared__ char read[];
         const unsigned int tid=threadIdx.x;
         const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
-
-        KEY_T lmer = 0;
-
-     //   printf(" tid = %d, offset = %d ", tid, rOffset);
-        read[tid]=buffer[rOffset+tid];
-       // printf(" tid = %u, read = %u ", tid, read[tid]);
-        __syncthreads();
-
-        for (unsigned int i = 0; i < 8; i++) { //calculate lmer
-        lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
-                                shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
-                                shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
-                                codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
-        };
-        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
-
-        lmers[rOffset+tid]=lmer;
+        const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+        
+        if (global_tid < max)
+        {
+            KEY_T lmer = 0;
+    
+         //   printf(" tid = %d, offset = %d ", tid, rOffset);
+            read[tid]=buffer[rOffset+tid];
+           // printf(" tid = %u, read = %u ", tid, read[tid]);
+            __syncthreads();
+    
+            for (unsigned int i = 0; i < 8; i++) { //calculate lmer
+            lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
+                                    shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
+                                    shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
+                                    codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
+            };
+            lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
+    
+            lmers[rOffset+tid]=lmer;
+        }
     }
     """)
 
     encode_lmer = mod.get_function("encodeLmerDevice")
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    # block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
-
     if readLength < max_threads:
         block_dim = (readLength, 1, 1)
-        grid_dim = (readCount, 1, 1)
+        grid_dim = (readCount // readLength + 1, 1, 1)
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
@@ -76,6 +78,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
                     np.uint(lmerLength),
+                    np.uint(readCount),
                     block = block_dim,
                     grid = grid_dim,
                     shared = readLength + 31 )#int(entriesCount) + 31) #max(readLength) + 31)
@@ -85,7 +88,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
 
 
 
-def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
+def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCount):
     logger = logging.getLogger('eulercuda.pyencode.compute_kmer_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -98,24 +101,36 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
             KEY_PTR lmers,
             KEY_PTR pkmers,
             KEY_PTR skmers,
-            KEY_T validBitMask
+            KEY_T validBitMask,
+            const unsigned int max
         )
     {
-        const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
-        KEY_T lmer;
-        //fetch lmer
-        lmer = lmers[tid];
-        //find prefix
-        pkmers[tid] = LMER_PREFIX(lmer,validBitMask);
-        //find suffix
-        skmers[tid] = LMER_SUFFIX(lmer,validBitMask);
+       const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+        
+        if (global_tid < max)
+        {
+     
+            const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
+            KEY_T lmer;
+            //fetch lmer
+            lmer = lmers[tid];
+            //find prefix
+            pkmers[tid] = LMER_PREFIX(lmer,validBitMask);
+            //find suffix
+            skmers[tid] = LMER_SUFFIX(lmer,validBitMask);
+        }
     }
     """)
     compute_kmer = mod.get_function("computeKmerDevice")
     # pkmers = np.zeroes_like(lmers)
     # skmers = np.zeroes_like(lmers)
 
-    block_dim, grid_dim = getOptimalLaunchConfiguration(len(lmers))
+#     block_dim, grid_dim = getOptimalLaunchConfiguration(len(lmers))
+    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    if readLength < max_threads:
+        block_dim = (readLength, 1, 1)
+        grid_dim = (readCount // readLength + 1, 1, 1)
+
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logging.info("Going to GPU.")
         compute_kmer(
@@ -123,12 +138,13 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
             drv.Out(pkmers),
             drv.Out(skmers),
             np.uint64(kmerBitMask),
+            np.uint(readCount),
             block = block_dim, grid = grid_dim
         )
     logging.info("leaving.")
 
 
-def compute_lmer_complement_device (readBuffer, bufferSize, readCount,d_lmers, readLength, lmerLength, entriesCount):
+def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmerLength):
     logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -140,45 +156,55 @@ def compute_lmer_complement_device (readBuffer, bufferSize, readCount,d_lmers, r
     __global__ void encodeLmerComplementDevice(
             char  * buffer,
             KEY_PTR lmers,
-            const unsigned int lmerLength
+            const unsigned int lmerLength,
+            const unsigned int max
             )
     {
-
-        extern __shared__ char dnaRead[];
-        const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
-        const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
-        //unsigned int lmerLength = 0;
-        KEY_T lmer = 0;
-        KEY_T temp = 0;
-
-       // lmerLength = d_lmerLength[tid];
-        dnaRead[tid] = buffer[row + tid];
-
-        __syncthreads();
-
-        dnaRead[tid] = codeR[dnaRead[tid] & 0x07];
-        __syncthreads();
-
-        for (unsigned int i = 0; i < lmerLength; i++)
+       const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+        
+        if (global_tid < max)
         {
-            temp = ((KEY_T)dnaRead[(tid + i) % blockDim.x]);
-            lmer = (temp << (i << 1)) | lmer;
+     
+            extern __shared__ char dnaRead[];
+            const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+            const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
+            const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
+            //unsigned int lmerLength = 0;
+            KEY_T lmer = 0;
+            KEY_T temp = 0;
+    
+           // lmerLength = d_lmerLength[tid];
+            dnaRead[tid] = buffer[row + tid];
+    
+            __syncthreads();
+    
+            dnaRead[tid] = codeR[dnaRead[tid] & 0x07];
+            __syncthreads();
+    
+            for (unsigned int i = 0; i < lmerLength; i++)
+            {
+                temp = ((KEY_T)dnaRead[(tid + i) % blockDim.x]);
+                lmer = (temp << (i << 1)) | lmer;
+            }
+            lmers[row + tid] = lmer;
         }
-        lmers[row + tid] = lmer;
-
     }
     """, keep = True)
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
-    block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
+#     block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
+    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    if readLength < max_threads:
+        block_dim = (readLength, 1, 1)
+        grid_dim = (readCount // readLength + 1, 1, 1)
+
     logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_lmerLength = np.uint(lmerLength)
-    if isinstance(readBuffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
+    if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         logging.info("Going to GPU.")
         encode_lmer_complement(
-            drv.In(readBuffer),  drv.InOut(d_lmers), np_lmerLength,
-            block = block_dim, grid = grid_dim,  shared = max(readLength) + 31
+            drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uint(readCount),
+            block = block_dim, grid = grid_dim,  shared = readLength + 31
         )
     else:
         print("Problem with data to GPU")

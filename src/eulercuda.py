@@ -99,13 +99,13 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     # while readProcessed < total_base_pairs:
     enc.encode_lmer_device(buffer, readCount, d_lmers, readLength, lmerLength)
 
-    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask)
+    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
     h_lmersF = np.array(d_lmers)
     h_pkmersF = np.array(d_pkmers)
     h_skmersF = np.array(d_skmers)
 
     enc.compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength)
-    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask)
+    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength,readCount)
     h_lmersR = np.array(d_lmers)
     h_pkmersR = np.array(d_pkmers)
     h_skmersR = np.array(d_skmers)
