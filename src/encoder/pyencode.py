@@ -2,7 +2,6 @@ import numpy as np
 import pycuda.driver as drv
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
-from pycuda.driver import device_attribute
 import logging
 
 module_logger = logging.getLogger('eulercuda.pyencode')
@@ -10,7 +9,7 @@ module_logger = logging.getLogger('eulercuda.pyencode')
 # Globals
 
 
-def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, readLength, lmerLength,entriesCount):
+def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -40,57 +39,50 @@ def encode_lmer_device (buffer, bufferSize, readCount, d_lmers, readLength, lmer
 
     __global__ void encodeLmerDevice(char  * buffer, KEY_PTR lmers, const unsigned int lmerLength)
     {
-        // Thread info
-        const int blocksPerGrid   = gridDim.x;
-        const int threadsPerBlock = blockDim.x;
-        const int totalThreadNum  = blocksPerGrid * threadsPerBlock;
-        const int curThreadIdx    = ( blockIdx.x * threadsPerBlock ) + threadIdx.x;
-        //const unsigned int lmerLength = 21;
-
-        extern __shared__ char dnaRead[]; // MB: changed from 'read' to solve compile error
-
-        const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
-        const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
+        extern __shared__ char read[];
+        const unsigned int tid=threadIdx.x;
+        const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
 
         KEY_T lmer = 0;
 
-        dnaRead[tid] = buffer[row + tid];
+     //   printf(" tid = %d, offset = %d ", tid, rOffset);
+        read[tid]=buffer[rOffset+tid];
+       // printf(" tid = %u, read = %u ", tid, read[tid]);
         __syncthreads();
-        for (unsigned int i = 0; i < 8; i++)    //calculate lmer
-        {
-            lmer = (lmer<< 8) |	((KEY_T)(shifter[codeF[dnaRead[threadIdx.x + i * 4] & 0x07]][3] |
-                                shifter[codeF[dnaRead[threadIdx.x + i * 4 + 1] & 0x07]][2] |
-                                shifter[codeF[dnaRead[threadIdx.x + i * 4 + 2] & 0x07]][1] |
-                                codeF[dnaRead[threadIdx.x + i * 4 + 3] & 0x07]) ) ;
-        }
-        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength - 1];
 
-        lmers[row + tid] = lmer;
+        for (unsigned int i = 0; i < 8; i++) { //calculate lmer
+        lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
+                                shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
+                                shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
+                                codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
+        };
+        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
+
+        lmers[rOffset+tid]=lmer;
     }
     """)
 
     encode_lmer = mod.get_function("encodeLmerDevice")
+    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    # block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
 
-    np_lmerLength = np.uint64(lmerLength)
-    gpu_lmerLength = drv.mem_alloc(np_lmerLength.size * np_lmerLength.dtype.itemsize)
-
-    # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-
-    block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
+    if readLength < max_threads:
+        block_dim = (readLength, 1, 1)
+        grid_dim = (readCount, 1, 1)
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
-    drv.memcpy_htod(gpu_lmerLength, np_lmerLength)
+
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         logging.info("Going to GPU.")
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
-                    np_lmerLength,
+                    np.uint(lmerLength),
                     block = block_dim,
                     grid = grid_dim,
-                    shared = max(readLength) + 31)
+                    shared = readLength + 31 )#int(entriesCount) + 31) #max(readLength) + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
     logging.info("finished. Leaving.")
+
 
 
 def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
@@ -127,7 +119,10 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask):
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logging.info("Going to GPU.")
         compute_kmer(
-            drv.In(lmers), drv.Out(pkmers), drv.Out(skmers), np.uint64(kmerBitMask),
+            drv.InOut(lmers),
+            drv.Out(pkmers),
+            drv.Out(skmers),
+            np.uint64(kmerBitMask),
             block = block_dim, grid = grid_dim
         )
     logging.info("leaving.")
@@ -200,14 +195,28 @@ def getOptimalLaunchConfiguration (threadCount):
     """
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
     max_grid_x = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_GRID_DIM_X)
-    grid_x = 0
+    grid_x = 1
     grid_y = 1
     block_dim = (max_threads, 1, 1)
     if threadCount > max_threads:
-        if (threadCount // max_threads) > max_grid_x:
+        grid_y = threadCount // max_threads
+        if threadCount % max_threads > 0:
             grid_y += 1
-        else:
-            grid_x = (threadCount // max_threads) + 1
+        grid_x = grid_y // 65535 + 1
+        if grid_y > 65535:
+            grid_y = 65535
+
     grid_dim = (grid_x, grid_y, 1)
+
     return block_dim, grid_dim
+
+
+            #
+    # if threadCount > max_threads:
+    #     if (threadCount // max_threads) > max_grid_x:
+    #         grid_y += 1
+    #     else:
+    #         grid_x = (threadCount // max_threads) + 1
+    #
+    #
 
