@@ -36,7 +36,8 @@ class Fasta:
         header, sequence = '', []
         for line in self.handle:
             if line[0] == '>':
-                if sequence: yield Dna(header, sequence)
+                if sequence:
+                    yield Dna(header, sequence)
                 header = line[1:-1]
                 sequence = []
             else:

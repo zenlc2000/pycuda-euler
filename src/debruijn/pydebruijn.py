@@ -1,7 +1,7 @@
 import sys
 import numpy as np
-import pycuda.driver as drv
 import pycuda.autoinit
+import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
 from pycuda.scan import ExclusiveScanKernel
@@ -12,7 +12,7 @@ from encoder.pyencode import getOptimalLaunchConfiguration
 module_logger = logging.getLogger('eulercuda.pydebruijn')
 
 
-def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
+def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
                           d_lcount, d_ecount, valid_bitmask):
     """
 
@@ -26,15 +26,16 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
 
     logger.info("started.")
     mod = SourceModule("""
+    #include <stdio.h>
     typedef unsigned long long  KEY_T ;
     typedef KEY_T               *KEY_PTR;
-    typedef unsigned int        VALUE_T;
+    typedef unsigned int       VALUE_T;
     typedef VALUE_T             *VALUE_PTR;
 
     #define LARGE_PRIME 1900813
     #define L2_SIZE 192
     #define MAX_ITERATIONS 100
-    #define MAX_INT 0xffffffff
+    #define MAX_INT 0xfffffff      // was 0xffffffff but VALUE_T kept choking on it
     #define MAX_SEED_COUNT 25
     #define C0  0x01010101
     #define C1	0x12345678
@@ -52,7 +53,7 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     __forceinline__ __device__ unsigned int hash_h(KEY_T  key, unsigned int bucketCount){
         return ((C0+C1*key)% LARGE_PRIME )% bucketCount;
     }
-
+/*
     __forceinline__ __device__ unsigned int hash_g1(KEY_T key,unsigned int seed){
         return ((C10^seed+(C11^seed)*key)% LARGE_PRIME )%L2_SIZE;
     }
@@ -62,81 +63,87 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     __forceinline__ __device__ unsigned int hash_g3(KEY_T key,unsigned int seed){
         return ((C30^seed+(C31^seed)*key)% LARGE_PRIME )%L2_SIZE;
     }
-
-    __forceinline__ __device__ VALUE_T getHashValue(KEY_T key,KEY_PTR TK,VALUE_PTR TV,unsigned int *bucketSize, unsigned int bucketCount)
+*/
+    __forceinline__ __device__ VALUE_T getHashValue(KEY_T key, KEY_PTR TK, VALUE_PTR TV, unsigned int *bucketSize,
+                                        unsigned int bucketCount)
     {
-        unsigned int bucket=hash_h(key,bucketCount);
-        unsigned int l=0;
-        unsigned int r=bucketSize[bucket];
+       // printf(" key = %llu, bucketCount = %d ", key, bucketCount);
+        unsigned int bucket = hash_h(key,bucketCount);
+        unsigned int l = 0;
+        unsigned int r = bucketSize[bucket];
         unsigned int mid;
-        while(l<r)
+        while(l < r)
         {
-            mid =l+((r-l)/2);
-            //if( (GET_HASH_KEY(T,bucket,mid)) < key){
+            mid = l + ((r - l) / 2);
             if( TK[GET_KEY_INDEX(bucket,mid)] <  key)
             {
-                l=mid+1;
+                l = mid + 1;
             }
             else
             {
-                r=mid;
+                r = mid;
             }
         }
-        //if(l < bucketSize[bucket] && GET_HASH_KEY(T,bucket,l)==key){
-        if(l < bucketSize[bucket] && TK[GET_KEY_INDEX(bucket,l)]==key)
+        if(l < bucketSize[bucket] && TK[GET_KEY_INDEX(bucket,l)] == key)
         {
-        //	return GET_HASH_VALUE(T,bucket,l);
+          //  printf(" TV[GET_VALUE_INDEX(bucket,l)] = %d ",TV[GET_VALUE_INDEX(bucket,l)]);
             return TV[GET_VALUE_INDEX(bucket,l)];
         }
         else
         {
+            //printf(" MAX_INT = %u ", MAX_INT);
             return MAX_INT;
         }
     }
 
     __global__ void debruijnCount(
-        KEY_PTR lmerKeys,
-        VALUE_PTR lmerValues,
-        unsigned int lmerCount,
-        KEY_PTR TK,
-        VALUE_PTR TV,
-        unsigned int * bucketSeed,
-        unsigned int bucketCount,
-        unsigned int * lcount,
-        unsigned int * ecount,
-        KEY_T validBitMask
-    )
+                    KEY_PTR lmerKeys,
+                    VALUE_PTR lmerValues,
+                    unsigned int lmerCount,
+                    KEY_PTR TK,
+                    VALUE_PTR TV,
+                    unsigned int * bucketSeed,
+                    unsigned int bucketCount,
+                    unsigned int * lcount,
+                    unsigned int * ecount,
+                    KEY_T validBitMask)
     {
 
         unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y)
-                + (blockDim.x * blockDim.y * blockIdx.x)
-                + (blockDim.x * threadIdx.y) + threadIdx.x;
+                        + (blockDim.x * blockDim.y * blockIdx.x)
+                        + (blockDim.x * threadIdx.y) + threadIdx.x;
         if (tid < lmerCount)
         {
             KEY_T lmer = lmerKeys[tid];
             VALUE_T lmerValue = lmerValues[tid];
+
             KEY_T prefix = (lmer & (validBitMask << 2)) >> 2;
             KEY_T suffix = (lmer & validBitMask);
 
             KEY_T lomask = 3;
-            VALUE_T prefixIndex = getHashValue(prefix, TK, TV, bucketSeed,
-                    bucketCount);
-            VALUE_T suffixIndex = getHashValue(suffix, TK, TV, bucketSeed,
-                    bucketCount);
+            VALUE_T prefixIndex = getHashValue(prefix, TK, TV, bucketSeed, bucketCount);
+            VALUE_T suffixIndex = getHashValue(suffix, TK, TV, bucketSeed, bucketCount);
+          //  printf(" prefixIndex = %u, suffixIndex = %u ", prefixIndex, suffixIndex);
+         // printf(" prefixIndex << 2 = %u, suffixIndex << 2 = %u ", (prefixIndex << 2), (suffixIndex << 2));
+
             KEY_T transitionTo = (lmer & lomask);
             KEY_T transitionFrom = ((lmer >> __popcll(validBitMask)) & lomask);
-            //atomicAdd(lcount+(prefixIndex<<2 )+transition,lmerValue);
-            //atomicAdd(ecount+(suffixIndex<<2)+transition,lmerValue);
+
+           // printf(" transitionTo = %llu, transitionFrom = %llu ",transitionTo, transitionFrom);
+
             lcount[(prefixIndex << 2) + transitionTo] = lmerValue;
             ecount[(suffixIndex << 2) + transitionFrom] = lmerValue;
+
+            printf(" lcount = %u, ecount = %u ", (prefixIndex << 2), (suffixIndex << 2));
+         //   printf(" lcount = %d, ecount = %d ",  lcount[(prefixIndex << 2) + transitionTo], ecount[(suffixIndex << 2) + transitionFrom]);
         }
     }
     """, keep = True)
-    d_lmerKeys = np.array(d_lmerKeys)
-    d_lmerValues = np.array(d_lmerKeys)
-    d_TK = np.array(d_TK)
-    d_TV = np.array(d_TV)
-    d_bucketSeed = np.array(d_bucketSeed)
+    d_lmerKeys = np.array(d_lmerKeys, dtype = np.uint64)
+    d_lmerValues = np.array(d_lmerValues, dtype = np.uint64)
+    # d_TK = np.array(d_TK, dtype = np.uint64)
+    # d_TV = np.array(d_TV, dtype = np.uint64)
+    # d_bucketSeed = np.array(d_bucketSeed, dtype = np.uint)
     # d_lcount = np.array(d_lcount)
     # d_ecount = np.array(d_ecount)
     debruijn_count = mod.get_function("debruijnCount")
@@ -144,9 +151,10 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     debruijn_count(
         drv.In(d_lmerKeys), drv.In(d_lmerValues), np.uint(lmerCount), drv.In(d_TK), drv.In(d_TV),
-        drv.In(d_bucketSeed), np.uint(bucketCount), drv.Out(d_lcount), drv.Out(d_ecount),
+        drv.In(d_bucketSize), np.uint(bucketCount), drv.Out(d_lcount), drv.Out(d_ecount),
         np.uint64(valid_bitmask), block = block_dim, grid = grid_dim
     )
+    logging.info("Finished. Leaving.")
 
 
 def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
@@ -311,10 +319,10 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     # mem_size = (kmerCount) * sizeof(unsigned int) *4; // 4 - tuple for each kmer
     mem_size = kmerCount * sys.getsizeof(np.uint) * 4
 
-    d_lcount = np.array(lmerCount, dtype = np.uint)
-    d_lstart = np.empty_like(d_lcount)
-    d_ecount = np.array(ecount, dtype = np.uint)
-    d_estart = np.empty_like(d_ecount)
+    d_lcount = np.empty(mem_size, dtype = np.uint)
+
+    d_ecount = np.empty_like(d_lcount)
+
 
     # kernel call
     debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
@@ -331,6 +339,8 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     # cudppScan(scanplanKmer, d_lstart, d_lcount, 4 * kmerCount);
     # cudppScan(scanplanKmer, d_estart, d_ecount, 4 * kmerCount);
+    d_lstart = np.empty_like(d_lcount)
+    d_estart = np.empty_like(d_ecount)
 
     knl = ExclusiveScanKernel(np.uint, "a+b")
     np_d_lcount = gpuarray(d_lcount)
@@ -354,6 +364,7 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
                 (kmerCount, ecount))
 # setupVertices<<<grid,block>>>(d_kmerKeys,kmerCount,d_TK,d_TV,d_bucketSeed,bucketCount,
     # *d_ev,d_lcount,d_lstart,d_ecount,d_estart);
+
     setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
                           bucketCount, d_ev, d_lcount, d_lstart,d_ecount, d_estart)
 
