@@ -7,7 +7,7 @@ def twin(km):
     return Seq.reverse_complement(km)
 
 def kmers(seq,k):
-    for i in xrange(len(seq)-k+1):
+    for i in range(len(seq)-k+1):
         yield seq[i:i+k]
 
 def fw(km):
@@ -22,24 +22,24 @@ def bw(km):
 def build(fn,k=31,limit=1):
     d = collections.defaultdict(int)
 
-#    for f in fn:
-    reads = SeqIO.parse(fn,'fasta')
-    for read in reads:
-        seq_s = str(read.seq)
-        seq_l = seq_s.split('N')
-        for seq in seq_l:
-            for km in kmers(seq,k):
-                d[km] +=1
-            seq = twin(seq)
-            for km in kmers(seq,k):
-                d[km] += 1
+    for f in fn:
+        reads = SeqIO.parse(f,'fasta')
+        for read in reads:
+            seq_s = str(read.seq)
+            seq_l = seq_s.split('N')
+            for seq in seq_l:
+                for km in kmers(seq,k):
+                    d[km] +=1
+                seq = twin(seq)
+                for km in kmers(seq,k):
+                    d[km] += 1
 
     d1 = [x for x in d if d[x] <= limit]
     for x in d1:
         del d[x]
-    for key, value in d.items():
-        print(key, value)
-#    return d
+    for key, value in list(d.items()):
+        print('{}\t{}'.format(key, value))
+    return d
 
 def contig_to_string(c):
     return c[0] + ''.join(x[-1] for x in c[1:])
@@ -116,23 +116,37 @@ def print_GFA(G,cs,k):
     """ Print in GFA format """
     print("H  VN:Z:1.0")
     for i,x in enumerate(cs):
-        print("S\t%d\t%s\t*",i,x)
+        print("S\t%d\t%s\t*"%(i,x))
 
     for i in G:
         for j,o in G[i][0]:
-            print("L\t%d\t+\t%d\t%s\t%dM",i,j,o,k-1)
+            print("L\t%d\t+\t%d\t%s\t%dM"%(i,j,o,k-1))
         for j,o in G[i][1]:
-            print("L\t%d\t-\t%d\t%s\t%dM",i,j,o,k-1)
+            print("L\t%d\t-\t%d\t%s\t%dM"%(i,j,o,k-1))
 
 def print_dbg(cs):
     """ Print out in Fasta format """
     for i,x in enumerate(cs):
-        print('>contig%d\n%s\n',i,x)
+        print(('>contig%d\n%s\n'%(i,x)))
 
+#if __name__ == "__main__":
+#    k = int(sys.argv[1])
+#    t0 = time.clock()
+#    tw = time.time()
+#    d = build(sys.argv[2:],k,1)
+    # print build(sys.argv[2:],k,1)
+    # print time.clock() - t0, "seconds process time"
+    # print time.time() - tw, "seconds wall time"
+#    G,cs = all_contigs(d,k)
+    # print_GFA(G,cs,k)
+#    print_dbg(cs)
 
 # expects to be a fastaq file
 def runAssembler(k,src):
     kval = int(k)
-    d = build(src,k=kval)
-    print("done")
-    print(d)
+    d = build([src],k=kval)
+    #G,cs = all_contigs(d,kval)
+    #print(G)
+    #print(cs)
+    #print_dbg(cs)
+    #print(d)
