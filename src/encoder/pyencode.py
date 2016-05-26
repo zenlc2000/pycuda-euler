@@ -3,6 +3,7 @@ import pycuda.driver as drv
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
 import logging
+from pycuda.tools import OccupancyRecord
 
 module_logger = logging.getLogger('eulercuda.pyencode')
 
@@ -37,32 +38,35 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
 
-    __global__ void encodeLmerDevice(char  * buffer, KEY_PTR lmers, const unsigned int lmerLength, const unsigned int max)
+    __global__ void encodeLmerDevice(	char  * buffer,
+                //    const unsigned int buffSize,
+                //    const unsigned int readLength,
+                    KEY_PTR lmers,
+                    const unsigned int lmerLength
+                    )
     {
+
         extern __shared__ char read[];
         const unsigned int tid=threadIdx.x;
         const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
-        const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
-        
-        if (global_tid < max)
-        {
-            KEY_T lmer = 0;
-    
-         //   printf(" tid = %d, offset = %d ", tid, rOffset);
-            read[tid]=buffer[rOffset+tid];
-           // printf(" tid = %u, read = %u ", tid, read[tid]);
-            __syncthreads();
-    
-            for (unsigned int i = 0; i < 8; i++) { //calculate lmer
+        KEY_T lmer=0;
+
+        read[tid]=buffer[rOffset + tid];
+
+        __syncthreads();
+
+        for (unsigned int i = 0; i < 8; i++)
+        { //calculate lmer
             lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
                                     shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
                                     shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
                                     codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
-            };
-            lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
-    
-            lmers[rOffset+tid]=lmer;
-        }
+        };
+        lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
+
+        lmers[rOffset+tid]=lmer;
+
+
     }
     """)
 
@@ -74,17 +78,19 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
-        logging.info("Going to GPU.")
+        logger.info("Going to GPU.")
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
                     np.uint(lmerLength),
-                    np.uint(readCount),
                     block = block_dim,
                     grid = grid_dim,
                     shared = readLength + 31 )#int(entriesCount) + 31) #max(readLength) + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
-    logging.info("finished. Leaving.")
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    logger.info("finished. Leaving.")
 
 
 
@@ -102,15 +108,15 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             KEY_PTR pkmers,
             KEY_PTR skmers,
             KEY_T validBitMask,
-            const unsigned int max
+            const unsigned int readCount
         )
     {
-       const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+       const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
         
-        if (global_tid < max)
+        if (tid < readCount)
         {
      
-            const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
+
             KEY_T lmer;
             //fetch lmer
             lmer = lmers[tid];
@@ -132,7 +138,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
         grid_dim = (readCount // readLength + 1, 1, 1)
 
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
-        logging.info("Going to GPU.")
+        logger.info("Going to GPU.")
         compute_kmer(
             drv.InOut(lmers),
             drv.Out(pkmers),
@@ -141,7 +147,11 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             np.uint(readCount),
             block = block_dim, grid = grid_dim
         )
-    logging.info("leaving.")
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("leaving.")
 
 
 def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmerLength):
@@ -157,18 +167,18 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
             char  * buffer,
             KEY_PTR lmers,
             const unsigned int lmerLength,
-            const unsigned int max
+            const unsigned int readCount
             )
     {
-       const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+        const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
+     //   const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
+
         
-        if (global_tid < max)
+        if (tid < readCount)
         {
      
             extern __shared__ char dnaRead[];
-            const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-            const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
-            const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
             //unsigned int lmerLength = 0;
             KEY_T lmer = 0;
             KEY_T temp = 0;
@@ -198,18 +208,22 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
         block_dim = (readLength, 1, 1)
         grid_dim = (readCount // readLength + 1, 1, 1)
 
-    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_lmerLength = np.uint(lmerLength)
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
-        logging.info("Going to GPU.")
+        logger.info("Going to GPU.")
         encode_lmer_complement(
             drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uint(readCount),
             block = block_dim, grid = grid_dim,  shared = readLength + 31
         )
     else:
         print("Problem with data to GPU")
-        logging.info("problem with data to GPU.")
-    logging.info("Finished. Leaving.")
+        logger.info("problem with data to GPU.")
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("Finished. Leaving.")
 
 
 # getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);

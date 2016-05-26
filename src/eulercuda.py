@@ -1,4 +1,4 @@
-import sys
+import os
 import argparse
 import encoder.pyencode as enc
 import debruijn.pydebruijn as db
@@ -274,7 +274,7 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
 
     db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
                                        h_kmerKeys, kmerCount, lmerLength, d_TK, d_TV, d_bucketSize, bucketCount,
-                                       d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
+                                       d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList, readLength, readCount)
 
 
 
@@ -399,6 +399,8 @@ def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tupl
 if __name__ == '__main__':
     """
     """
+    print(os.getpid())
+    # input("=> ")
     logging.config.fileConfig('logging.cfg')
     logger = logging.getLogger('eulercuda')
     logger.info('Program started')

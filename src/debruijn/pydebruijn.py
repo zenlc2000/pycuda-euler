@@ -7,13 +7,13 @@ from pycuda.compiler import SourceModule
 from pycuda.scan import ExclusiveScanKernel
 from pycuda.driver import device_attribute
 import logging
-from encoder.pyencode import getOptimalLaunchConfiguration
+
 
 module_logger = logging.getLogger('eulercuda.pydebruijn')
 
 
 def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
-                          d_lcount, d_ecount, valid_bitmask):
+                          d_lcount, d_ecount, valid_bitmask, readLength, readCount):
     """
 
     This kernel works on each l-mer ,counting edges of the graph.
@@ -106,14 +106,20 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
                     unsigned int bucketCount,
                     unsigned int * lcount,
                     unsigned int * ecount,
-                    KEY_T validBitMask)
+                    KEY_T validBitMask,
+                    const unsigned int readCount)
     {
 
         unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y)
                         + (blockDim.x * blockDim.y * blockIdx.x)
                         + (blockDim.x * threadIdx.y) + threadIdx.x;
-        if (tid < lmerCount)
+
+        const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+        if (global_tid < max)
         {
+ //       if (tid < lmerCount)
+ //       {
             KEY_T lmer = lmerKeys[tid];
             VALUE_T lmerValue = lmerValues[tid];
 
@@ -147,14 +153,18 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     # d_lcount = np.array(d_lcount)
     # d_ecount = np.array(d_ecount)
     debruijn_count = mod.get_function("debruijnCount")
-    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
-    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+#    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
+    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    if readLength < max_threads:
+        block_dim = (readLength, 1, 1)
+        grid_dim = (readCount // readLength + 1, 1, 1)
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     debruijn_count(
         drv.In(d_lmerKeys), drv.In(d_lmerValues), np.uint(lmerCount), drv.In(d_TK), drv.In(d_TV),
         drv.In(d_bucketSize), np.uint(bucketCount), drv.Out(d_lcount), drv.Out(d_ecount),
-        np.uint64(valid_bitmask), block = block_dim, grid = grid_dim
+        np.uint64(valid_bitmask), np.uint(readCount), block = block_dim, grid = grid_dim
     )
-    logging.info("Finished. Leaving.")
+    logger.info("Finished. Leaving.")
 
 
 def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
@@ -207,7 +217,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
     """)
     setup_vertices = mod.get_function("setupVertices")
     block_dim, grid_dim = getOptimalLaunchConfiguration(kmerCount)
-    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     setup_vertices(drv.In(d_kmerKeys), np.uintt(kmerCount), drv.In(d_TK), drv.In(d_TK),
                    drv.In(d_bucketSeed), np.uint(bucketCount), drv.Out(d_ev), drv.In(d_lcount),
                    drv.In(d_lstart), drv.In(d_ecount),drv.In(d_estart), block = block_dim, grid = grid_dim
@@ -293,7 +303,7 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
 
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
-    logging.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     setup_edges(
         drv.In(d_lmerKeys), drv.In(d_lmerValues), drv.InOut(d_lmerOffsets), np.uint(lmerCount), drv.In(d_TK),
         drv.In(d_TV), drv.In(d_bucketSeed), np.uint(bucketCount), drv.In(d_l), drv.In(d_e), drv.In(d_e),
@@ -301,7 +311,8 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
     )
 
 def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerKeys, kmerCount, l,
-                                    d_TK, d_TV, d_bucketSeed, bucketCount, d_ev, d_l, d_e, d_ee, ecount):
+                                    d_TK, d_TV, d_bucketSeed, bucketCount, d_ev, d_l, d_e, d_ee, ecount,
+                                    readLength, readCount):
     """
 
     :return:
@@ -326,7 +337,7 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     # kernel call
     debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
-                          d_lcount, d_ecount, valid_bitmask)
+                          d_lcount, d_ecount, valid_bitmask, readLength, readCount)
 
     #  we need to perform pre-fix scan on , lcount, ecount, lmerValues,
     #  lcount and ecount has equal number of elements ,4*kmercount

@@ -106,14 +106,17 @@ def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount
         if (tid < length)
       {
             KEY_T key = keys[tid];
-           // printf(" key = %llu ", key);
+            //printf(" key = %llu ", key);
             unsigned int bucket = hash_h(key,bucketCount);
+            //printf(" bucket = %u ", bucket);
             VALUE_T value = values[tid];
+            //printf(" value = %u ", value);
             unsigned int index = start[bucket] + offset[tid];
+           // printf(" index = %u ", index);
 
             bufferK[index] = key;
             bufferV[index] = value;
-         //   printf(" bufferk = %llu, bufferv = %llu ", bufferK[index], bufferV[index]);
+            //printf(" bufferk = %d, bufferv = %d ", bufferK[index], bufferV[index]);
 
         }
     }
@@ -140,7 +143,6 @@ def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount
         block = block_dim
     )
     logger.info('Finished. Leaving.')
-    # TODO: These leave with only 1 element apiece... not good.
     return [d_bufferK, d_bufferV]
 
 
