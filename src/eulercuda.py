@@ -49,40 +49,26 @@ def doErrorCorrection (readBuffer, readCount, ec_tuple_size, max_ec_pos):
 def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
                         kmerValues, kmerCount):
     """
-    char * d_reads = NULL;
-    KEY_PTR h_lmersF = NULL;
-    KEY_PTR h_lmersR = NULL;
-    KEY_PTR d_lmers = NULL;
-    KEY_PTR h_pkmersF = NULL;
-    KEY_PTR h_pkmersR = NULL;
-    KEY_PTR h_skmersF = NULL;
-    KEY_PTR h_skmersR = NULL;
-    KEY_PTR d_pkmers = NULL;
-    KEY_PTR d_skmers = NULL;
-    unsigned int readProcessed=0;
-    unsigned int kmerGPUEncTimer = 0;
-    unsigned int kmerExtractTimer=0;
 
-    typedef dense_hash_map<KEY_T, VALUE_T> map;
-    map kmerMap(readLength*readCount);
-    map lmerMap(readLength*readCount);
     """
-
-    # bufferSize = buffer.size
+    logger = logging.getLogger('eulercuda.readLmersKmersCuda')
+    logger.info("started.")
     kmerMap = {}
     lmerMap = {}
-    # buffer = np.fromstring('\n'.join(readBuffer), count=len(readBuffer), dtype=np.str)
+
     buffer = np.array(readBuffer, dtype = 'S')
     nbr_values = buffer.size * buffer.dtype.itemsize
     d_lmers = np.empty(buffer.size, dtype = np.uint64)
     d_pkmers = np.empty_like(d_lmers)
     d_skmers = np.empty_like(d_lmers)
 
-    CUDA_NUM_READS = 1024 * 32
-    if readCount < CUDA_NUM_READS:
-        readToProcess = readCount
-    else:
-        readToProcess = CUDA_NUM_READS
+    # CUDA_NUM_READS = 1024 * 32
+    # if readCount < CUDA_NUM_READS:
+    #     readToProcess = readCount
+    # else:
+    #     readToProcess = CUDA_NUM_READS
+
+    readToProcess = readCount
     kmerBitMask = 0
 
     # bufferSize = sum(sys.getsizeof(seq) for seq in readBuffer)
@@ -91,11 +77,12 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
 
     for _ in range(0, (lmerLength - 1) * 2):
         kmerBitMask = (kmerBitMask << 1) | 1
-        # print("kmerBitMask = " + str(kmerBitMask))
+    logger.debug("kmerBitMask = %s" % (kmerBitMask))
+
     readProcessed = 0
     # Originally a loop slicing readBuffer into chunks then process each chunk
     # Theoretically shouldn't have to do this on distrib. system.
-    logging.info("Start encoding")
+
     # while readProcessed < total_base_pairs:
     enc.encode_lmer_device(buffer, readCount, d_lmers, readLength, lmerLength)
 
@@ -109,8 +96,6 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     h_lmersR = np.array(d_lmers)
     h_pkmersR = np.array(d_pkmers)
     h_skmersR = np.array(d_skmers)
-
-    logging.info("Finished with Encoder.")
 
     lmerEmpty, kmerEmpty = 0, 0
 
@@ -138,13 +123,13 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
                 lmerMap[h_lmersR[index]] = 1
             else:
                 lmerMap[h_lmersR[index]] += 1
-    readProcessed += readToProcess
-    readToProcess -= readCount
-    if readCount < CUDA_NUM_READS:
-        readToProcess = readCount
-    else:
-        readToProcess = CUDA_NUM_READS
-        # End of chunking loop
+    # readProcessed += readToProcess
+    # readToProcess -= readCount
+    # if readCount < CUDA_NUM_READS:
+    #     readToProcess = readCount
+    # else:
+    #     readToProcess = CUDA_NUM_READS
+    #     # End of chunking loop
 
     kmerCount = len(kmerMap) + kmerEmpty
     # TODO: Log message with kmer count

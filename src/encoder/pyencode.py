@@ -74,7 +74,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
     if readLength < max_threads:
         block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength + 1, 1, 1)
+        grid_dim = (readCount // readLength, 1, 1)
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
@@ -135,7 +135,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
     if readLength < max_threads:
         block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength + 1, 1, 1)
+        grid_dim = (readCount // readLength, 1, 1)
 
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logger.info("Going to GPU.")
@@ -206,7 +206,7 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
     if readLength < max_threads:
         block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength + 1, 1, 1)
+        grid_dim = (readCount // readLength, 1, 1)
 
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_lmerLength = np.uint(lmerLength)

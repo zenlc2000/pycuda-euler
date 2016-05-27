@@ -54,7 +54,7 @@ def phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount):
     np_d_offset = np.array(d_offset, dtype = np.uint)
     np_d_bucketSize = np.empty( (2, d_length // 2), dtype = np.uint).reshape(2, -1)
     block_dim = (512, 1, 1)
-    grid_dim = (d_length//512+1, 1, 1)
+    grid_dim = (d_length//512, 1, 1)
     phase1 = mod.get_function("phase1")
     phase1(
         drv.InOut(np_d_keys),
@@ -129,7 +129,7 @@ def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount
     d_bufferK = np.empty(d_keys.size, dtype = np.uint64)
     d_bufferV = np.empty(d_values.size, dtype = np.uint64)
     block_dim = (512, 1, 1)
-    grid_dim = (d_length//512+1, 1, 1)
+    grid_dim = (d_length//512, 1, 1)
     copy_to_bucket(
         drv.In(d_keys),
         drv.In(d_values),
