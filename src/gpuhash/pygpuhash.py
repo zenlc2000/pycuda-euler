@@ -14,7 +14,7 @@ module_logger = logging.getLogger('eulercuda.pygpuhash')
 MAX_BUCKET_ITEM = 520
 
 
-def phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount):
+def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     logger = logging.getLogger('eulercuda.pygpuhash.phase1_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -25,7 +25,7 @@ def phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount):
     #define C0  0x01010101
     #define C1	0x12345678
     #define LARGE_PRIME 1900813
-    #define MAX_INT 0xffffffff
+    #define MAX_INT  0xffffffff
 
     __forceinline__ __device__ unsigned int hash_h(KEY_T  key, unsigned int bucketCount)
     {
@@ -51,16 +51,16 @@ def phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount):
     }
     """, keep = True)
     np_d_keys = np.array(d_keys, dtype = np.uint64)
-    np_d_offset = np.array(d_offset, dtype = np.uint)
-    np_d_bucketSize = np.empty( (2, d_length // 2), dtype = np.uint).reshape(2, -1)
+    # np_d_offset = np.zeros(d_offset, dtype = np.uint)
+
     block_dim = (512, 1, 1)
     grid_dim = (d_length//512, 1, 1)
     phase1 = mod.get_function("phase1")
     phase1(
         drv.InOut(np_d_keys),
-        drv.InOut(np_d_offset),
+        drv.InOut(d_offset),
         np.uint(d_length),
-        drv.Out(np_d_bucketSize),
+        drv.Out(count),
         np.uint(bucketCount),
         grid = grid_dim,
         block = block_dim
@@ -69,10 +69,10 @@ def phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount):
     # d_offset = np_d_offset.tolist()
     logger.info('Finished. Leaving.')
  #   return [d_offset, d_bucketSize]
-    return [np_d_offset, np_d_bucketSize]
+    return d_offset, count
 
 
-def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount,d_bufferK,d_bufferV):
+def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV):
     logger = logging.getLogger('eulercuda.pygpuhash.copy_to_bucket_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -84,7 +84,7 @@ def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount
     #define C0  0x01010101
     #define C1	0x12345678
     #define LARGE_PRIME 1900813
-    #define MAX_INT 0xffffffff
+    #define MAX_INT  0xffffffff
 
     __forceinline__ __device__ unsigned int hash_h(KEY_T  key, unsigned int bucketCount)
     {
@@ -112,22 +112,24 @@ def copy_to_bucket_device(d_keys,d_values,d_offset,d_length,d_start, bucketCount
             VALUE_T value = values[tid];
             //printf(" value = %u ", value);
             unsigned int index = start[bucket] + offset[tid];
-           // printf(" index = %u ", index);
+            //printf(" index = %u ", index);
 
             bufferK[index] = key;
+           // printf(" bufferk = %llu ", bufferK[index]);
             bufferV[index] = value;
-            //printf(" bufferk = %d, bufferv = %d ", bufferK[index], bufferV[index]);
+            //printf(" bufferk = %llu, bufferv = %d ", bufferK[index], bufferV[index]);
 
         }
     }
     """, keep = True)
     copy_to_bucket = mod.get_function("copyToBucket")
+
     d_keys = np.array(d_keys, dtype = np.uint64)
-    d_values = np.array(d_values, dtype = np.uint64)
+    d_values = np.array(d_values, dtype = np.uint)
     # d_offset = np.array(d_values, dtype = np.uint)
     # d_start = np.array(d_start, dtype = np.uint)
-    d_bufferK = np.empty(d_keys.size, dtype = np.uint64)
-    d_bufferV = np.empty(d_values.size, dtype = np.uint64)
+    d_bufferK = np.zeros(d_keys.size, dtype = np.uint64)
+    d_bufferV = np.zeros(d_values.size, dtype = np.uint)
     block_dim = (512, 1, 1)
     grid_dim = (d_length//512, 1, 1)
     copy_to_bucket(
@@ -234,21 +236,21 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
 
     dataSize = d_length * sys.getsizeof(np.uint)
     bucketDataSize = bucketCount * sys.getsizeof(np.uint)
-
+    d_bucketSize = np.zeros(bucketDataSize, dtype = np.uint)
     d_offset = np.empty(dataSize, dtype = np.uint)
     #   d_bucketSize = np.empty(bucketDataSize, dtype = np.uint)
     #   think d_bucketSize needs to be a 2D array
     result = phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount)
-    d_offset = result[0]
-    d_bucketSize = result[1]
+    d_offset, d_bucketSize = result
+
     d_start = np.empty(bucketDataSize, dtype = np.uint)
 
     # cudppScan(scanplan, d_start, *d_bucketSize, *bucketCount);
     # cudppScan (const CUDPPHandle planHandle, void *d_out, const void *d_in, size_t numElements)
 
     knl = ExclusiveScanKernel(np.uint, "a+b", 0)
-    flat_bucketsize = np.array(d_bucketSize.flatten())
-    np_d_start = gpuarray.to_gpu(flat_bucketsize)
+    # flat_bucketsize = np.array(d_bucketSize.flatten())
+    np_d_start = gpuarray.to_gpu(d_bucketSize)
     logger.info('Prior to scan.')
     knl(np_d_start)
     logger.info('Post scan.')
