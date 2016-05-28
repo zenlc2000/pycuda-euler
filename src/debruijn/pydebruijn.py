@@ -5,7 +5,6 @@ import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
 from pycuda.scan import ExclusiveScanKernel
-from pycuda.driver import device_attribute
 import logging
 
 
@@ -35,7 +34,7 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     #define LARGE_PRIME 1900813
     #define L2_SIZE 192
     #define MAX_ITERATIONS 100
-    #define MAX_INT 0xfffffff      // was 0xffffffff but VALUE_T kept choking on it
+    #define MAX_INT 0xffffffff      // was 0xffffffff but VALUE_T kept choking on it
     #define MAX_SEED_COUNT 25
     #define C0  0x01010101
     #define C1	0x12345678
@@ -114,12 +113,11 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
                         + (blockDim.x * blockDim.y * blockIdx.x)
                         + (blockDim.x * threadIdx.y) + threadIdx.x;
 
-        const unsigned int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-        if (global_tid < max)
+
+
+        if (tid < lmerCount)
         {
- //       if (tid < lmerCount)
- //       {
             KEY_T lmer = lmerKeys[tid];
             VALUE_T lmerValue = lmerValues[tid];
 
@@ -155,7 +153,7 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     debruijn_count = mod.get_function("debruijnCount")
 #    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount)
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    if readLength < max_threads:
+    if readCount < max_threads:
         block_dim = (readLength, 1, 1)
         grid_dim = (readCount // readLength + 1, 1, 1)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))

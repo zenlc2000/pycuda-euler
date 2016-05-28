@@ -18,6 +18,7 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     logger = logging.getLogger('eulercuda.pygpuhash.phase1_device')
     logger.info("started.")
     mod = SourceModule("""
+    #include <stdio.h>
     typedef unsigned long long  KEY_T ;
     typedef KEY_T               *KEY_PTR;
     typedef unsigned int        VALUE_T;
@@ -45,6 +46,7 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
             KEY_T key = keys[tid];
             unsigned int bucket = hash_h(key,bucketCount);
             offset[tid] = atomicInc( count + bucket, MAX_INT);
+            printf(" offset = %u ", offset[tid]);
 
         }
         __syncthreads();
@@ -54,7 +56,10 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     # np_d_offset = np.zeros(d_offset, dtype = np.uint)
 
     block_dim = (512, 1, 1)
-    grid_dim = (d_length//512, 1, 1)
+    if (d_length//512) == 0:
+        grid_dim = (1, 1, 1)
+    else:
+        grid_dim = (d_length//512, 1, 1)
     phase1 = mod.get_function("phase1")
     phase1(
         drv.InOut(np_d_keys),
@@ -106,18 +111,12 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         if (tid < length)
       {
             KEY_T key = keys[tid];
-            //printf(" key = %llu ", key);
             unsigned int bucket = hash_h(key,bucketCount);
-            //printf(" bucket = %u ", bucket);
             VALUE_T value = values[tid];
-            //printf(" value = %u ", value);
             unsigned int index = start[bucket] + offset[tid];
-            //printf(" index = %u ", index);
 
             bufferK[index] = key;
-           // printf(" bufferk = %llu ", bufferK[index]);
             bufferV[index] = value;
-            //printf(" bufferk = %llu, bufferv = %d ", bufferK[index], bufferV[index]);
 
         }
     }
@@ -131,7 +130,10 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     d_bufferK = np.zeros(d_keys.size, dtype = np.uint64)
     d_bufferV = np.zeros(d_values.size, dtype = np.uint)
     block_dim = (512, 1, 1)
-    grid_dim = (d_length//512, 1, 1)
+    if (d_length//512) == 0:
+        grid_dim = (1, 1, 1)
+    else:
+        grid_dim = (d_length//512, 1, 1)
     copy_to_bucket(
         drv.In(d_keys),
         drv.In(d_values),
@@ -236,14 +238,14 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
 
     dataSize = d_length * sys.getsizeof(np.uint)
     bucketDataSize = bucketCount * sys.getsizeof(np.uint)
-    d_bucketSize = np.zeros(bucketDataSize, dtype = np.uint)
+    d_bucketSize = np.zeros(len(d_keys), dtype = np.uint)
     d_offset = np.empty(dataSize, dtype = np.uint)
     #   d_bucketSize = np.empty(bucketDataSize, dtype = np.uint)
     #   think d_bucketSize needs to be a 2D array
     result = phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount)
     d_offset, d_bucketSize = result
 
-    d_start = np.empty(bucketDataSize, dtype = np.uint)
+    d_start = np.empty(len(d_keys), dtype = np.uint)
 
     # cudppScan(scanplan, d_start, *d_bucketSize, *bucketCount);
     # cudppScan (const CUDPPHandle planHandle, void *d_out, const void *d_in, size_t numElements)
