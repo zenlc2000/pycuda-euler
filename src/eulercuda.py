@@ -58,9 +58,9 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
 
     buffer = np.array(readBuffer, dtype = 'S')
     nbr_values = buffer.size * buffer.dtype.itemsize
-    d_lmers = np.empty(buffer.size, dtype = np.uint64)
-    d_pkmers = np.empty_like(d_lmers)
-    d_skmers = np.empty_like(d_lmers)
+    d_lmers = np.zeros(buffer.size, dtype = np.uint64)
+    d_pkmers = np.zeros_like(d_lmers)
+    d_skmers = np.zeros_like(d_lmers)
 
     # CUDA_NUM_READS = 1024 * 32
     # if readCount < CUDA_NUM_READS:

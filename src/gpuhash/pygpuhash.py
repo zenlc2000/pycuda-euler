@@ -36,16 +36,13 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
                 unsigned int * offset,
                 unsigned int length,
                 unsigned int* count,
-                unsigned int bucketCount)
-    {
+                unsigned int bucketCount){
 
-        unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) +
-        (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
-        if(tid < length)
-        {
-            KEY_T key = keys[tid];
-            unsigned int bucket = hash_h(key,bucketCount);
-            offset[tid] = atomicInc( count + bucket, MAX_INT);
+        unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
+        if(tid<length){
+            KEY_T key=keys[tid];
+            unsigned int bucket=hash_h(key,bucketCount);
+            offset[tid]=atomicInc (count+bucket,MAX_INT);
             printf(" offset = %u ", offset[tid]);
 
         }
@@ -53,6 +50,7 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     }
     """, keep = True)
     np_d_keys = np.array(d_keys, dtype = np.uint64)
+    np_d_offset = np.zeros(np_d_keys.size, dtype = np.uint)
     # np_d_offset = np.zeros(d_offset, dtype = np.uint)
 
     block_dim = (512, 1, 1)
@@ -62,19 +60,20 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
         grid_dim = (d_length//512, 1, 1)
     phase1 = mod.get_function("phase1")
     phase1(
-        drv.InOut(np_d_keys),
-        drv.InOut(d_offset),
+        drv.In(np_d_keys),
+        drv.Out(np_d_offset),
         np.uint(d_length),
         drv.Out(count),
         np.uint(bucketCount),
         grid = grid_dim,
         block = block_dim
     )
+    d_offset = np_d_offset.tolist()
     # d_bucketSize = np_d_bucketSize.tolist()
     # d_offset = np_d_offset.tolist()
     logger.info('Finished. Leaving.')
  #   return [d_offset, d_bucketSize]
-    return d_offset, count
+ #    return d_offset, count
 
 
 def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV):
@@ -238,18 +237,16 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
 
     dataSize = d_length * sys.getsizeof(np.uint)
     bucketDataSize = bucketCount * sys.getsizeof(np.uint)
-    d_bucketSize = np.zeros(len(d_keys), dtype = np.uint)
-    d_offset = np.empty(dataSize, dtype = np.uint)
+    d_bucketSize = np.zeros(1, dtype = np.uint)
+    d_bucketSize[0] = bucketDataSize
+    d_offset = [] #np.zeros(dataSize, dtype = np.uint)
     #   d_bucketSize = np.empty(bucketDataSize, dtype = np.uint)
     #   think d_bucketSize needs to be a 2D array
-    result = phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount)
-    d_offset, d_bucketSize = result
+    # result = \
+    phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount)
+    # d_offset, d_bucketSize
 
-    d_start = np.empty(len(d_keys), dtype = np.uint)
-
-    # cudppScan(scanplan, d_start, *d_bucketSize, *bucketCount);
-    # cudppScan (const CUDPPHandle planHandle, void *d_out, const void *d_in, size_t numElements)
-
+    d_start = np.zeros(bucketDataSize, dtype = np.uint)
     knl = ExclusiveScanKernel(np.uint, "a+b", 0)
     # flat_bucketsize = np.array(d_bucketSize.flatten())
     np_d_start = gpuarray.to_gpu(d_bucketSize)
