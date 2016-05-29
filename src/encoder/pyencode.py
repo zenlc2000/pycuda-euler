@@ -66,7 +66,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
 
         lmers[rOffset+tid]=lmer;
 
-
+        __syncthreads();
     }
     """)
 
@@ -124,6 +124,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             pkmers[tid] = LMER_PREFIX(lmer,validBitMask);
             //find suffix
             skmers[tid] = LMER_SUFFIX(lmer,validBitMask);
+            __syncthreads();
         }
     }
     """)
@@ -197,6 +198,7 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
                 lmer = (temp << (i << 1)) | lmer;
             }
             lmers[row + tid] = lmer;
+            __syncthreads();
         }
     }
     """, keep = True)

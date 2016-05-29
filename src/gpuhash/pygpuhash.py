@@ -114,7 +114,7 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
             unsigned int bucket = hash_h(key,bucketCount);
             VALUE_T value = values[tid];
             unsigned int index = start[bucket] + offset[tid];
-
+            printf(" index = %d ", index);
             bufferK[index] = key;
             bufferV[index] = value;
 
