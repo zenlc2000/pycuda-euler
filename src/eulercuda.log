@@ -1945,3 +1945,168 @@
 2016-05-29 14:12:31,590 - eulercuda - INFO - lmerCount = 99, kmerCount = 80
 2016-05-29 14:12:31,590 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
 2016-05-29 14:12:31,591 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 15:42:43,858 - eulercuda - INFO - Program started
+2016-05-29 15:42:43,862 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 15:42:43,863 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 15:42:45,754 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 15:42:45,754 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 15:42:45,758 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:42:45,758 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 15:42:45,759 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 15:42:47,465 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 15:42:47,466 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:42:47,467 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 15:42:47,467 - eulercuda.pyencode.compute_lmer_complement_device - INFO - started.
+2016-05-29 15:42:49,194 - eulercuda.pyencode.compute_lmer_complement_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 15:42:49,195 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Going to GPU.
+2016-05-29 15:42:49,196 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:42:49,196 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Finished. Leaving.
+2016-05-29 15:42:49,196 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 15:42:50,915 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 15:42:50,916 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:42:50,916 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 15:42:50,919 - eulercuda.readLmersKmersCuda - INFO - kmer count = 80
+2016-05-29 15:42:50,919 - eulercuda - INFO - lmerCount = 84, kmerCount = 80
+2016-05-29 15:42:50,920 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
+2016-05-29 15:42:50,920 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 15:45:47,320 - eulercuda - INFO - Program started
+2016-05-29 15:45:47,323 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 15:45:47,323 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 15:45:49,053 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 15:45:49,053 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 15:45:49,056 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:45:49,056 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 15:45:49,056 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 15:45:50,795 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 15:45:50,797 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:45:50,797 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 15:45:50,797 - eulercuda.pyencode.compute_lmer_complement_device - INFO - started.
+2016-05-29 15:45:52,493 - eulercuda.pyencode.compute_lmer_complement_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 15:45:52,494 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Going to GPU.
+2016-05-29 15:45:52,495 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:45:52,495 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Finished. Leaving.
+2016-05-29 15:45:52,495 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 15:45:54,239 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 15:45:54,241 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 15:45:54,241 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 15:45:54,242 - eulercuda.readLmersKmersCuda - INFO - kmer count = 80
+2016-05-29 15:45:54,242 - eulercuda - INFO - lmerCount = 84, kmerCount = 80
+2016-05-29 15:45:54,242 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
+2016-05-29 15:45:54,243 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 15:47:52,720 - eulercuda.pygpuhash.phase1_device - INFO - Finished. Leaving.
+2016-05-29 16:37:19,159 - eulercuda - INFO - Program started
+2016-05-29 16:37:19,162 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 16:37:19,163 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 16:37:21,096 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 16:37:21,096 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 16:37:21,102 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:37:21,102 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 16:37:21,102 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 16:37:22,832 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 16:37:22,833 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:37:22,834 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 16:37:22,834 - eulercuda.pyencode.compute_lmer_complement_device - INFO - started.
+2016-05-29 16:37:24,607 - eulercuda.pyencode.compute_lmer_complement_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 16:37:24,607 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Going to GPU.
+2016-05-29 16:37:24,608 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:37:24,609 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Finished. Leaving.
+2016-05-29 16:37:24,609 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 16:37:26,365 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 16:37:26,366 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:37:26,367 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 16:37:26,368 - eulercuda.readLmersKmersCuda - INFO - kmer count = 81
+2016-05-29 16:37:26,368 - eulercuda - INFO - lmerCount = 85, kmerCount = 81
+2016-05-29 16:37:26,369 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
+2016-05-29 16:37:26,369 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 16:43:27,367 - eulercuda - INFO - Program started
+2016-05-29 16:43:27,368 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 16:43:27,368 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 16:43:29,067 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 16:43:29,067 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 16:43:29,070 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:43:29,070 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 16:43:29,070 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 16:43:30,777 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 16:43:30,789 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:43:30,789 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 16:43:30,789 - eulercuda.pyencode.compute_lmer_complement_device - INFO - started.
+2016-05-29 16:43:32,488 - eulercuda.pyencode.compute_lmer_complement_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 16:43:32,488 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Going to GPU.
+2016-05-29 16:43:32,489 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:43:32,489 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Finished. Leaving.
+2016-05-29 16:43:32,489 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 16:43:34,185 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 16:43:34,186 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 16:43:34,186 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 16:43:34,186 - eulercuda.readLmersKmersCuda - INFO - kmer count = 81
+2016-05-29 16:43:34,187 - eulercuda - INFO - lmerCount = 89, kmerCount = 81
+2016-05-29 16:43:34,187 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
+2016-05-29 16:43:34,187 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 16:43:35,902 - eulercuda.pygpuhash.phase1_device - INFO - Finished. Leaving.
+2016-05-29 16:43:39,337 - eulercuda.pygpuhash.create_hash_table_device - INFO - Prior to scan.
+2016-05-29 16:43:39,338 - eulercuda.pygpuhash.create_hash_table_device - INFO - Post scan.
+2016-05-29 16:43:39,338 - eulercuda.pygpuhash.copy_to_bucket_device - INFO - started.
+2016-05-29 17:33:32,384 - eulercuda - INFO - Program started
+2016-05-29 17:33:32,386 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:33:32,386 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:33:34,187 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:33:34,187 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:34:19,989 - eulercuda - INFO - Program started
+2016-05-29 17:34:19,990 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:34:19,990 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:34:21,694 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:34:21,694 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:34:21,698 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:34:21,698 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 17:34:21,698 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:36:55,848 - eulercuda - INFO - Program started
+2016-05-29 17:36:55,849 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:36:55,849 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:36:57,580 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:36:57,580 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:36:57,583 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:36:57,583 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 17:36:57,584 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:36:59,282 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 17:38:46,753 - eulercuda - INFO - Program started
+2016-05-29 17:38:46,755 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:38:46,756 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:38:48,476 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:38:48,476 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:38:48,478 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:38:48,478 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 17:38:48,479 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:38:50,173 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 17:38:50,175 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:38:50,175 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 17:38:50,175 - eulercuda.pyencode.compute_lmer_complement_device - INFO - started.
+2016-05-29 17:38:51,864 - eulercuda.pyencode.compute_lmer_complement_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:38:51,864 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Going to GPU.
+2016-05-29 17:38:51,865 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:38:51,865 - eulercuda.pyencode.compute_lmer_complement_device - INFO - Finished. Leaving.
+2016-05-29 17:38:51,866 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:38:53,572 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 17:38:53,573 - eulercuda.pyencode.compute_kmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:38:53,574 - eulercuda.pyencode.compute_kmer_device - INFO - leaving.
+2016-05-29 17:38:53,576 - eulercuda.readLmersKmersCuda - INFO - kmer count = 86
+2016-05-29 17:38:53,577 - eulercuda - INFO - lmerCount = 80, kmerCount = 86
+2016-05-29 17:38:53,579 - eulercuda.pygpuhash.create_hash_table_device - INFO - started.
+2016-05-29 17:38:53,579 - eulercuda.pygpuhash.phase1_device - INFO - started.
+2016-05-29 17:41:45,598 - eulercuda - INFO - Program started
+2016-05-29 17:41:45,600 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:41:45,600 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:41:47,331 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:41:47,331 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:41:47,334 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:41:47,334 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 17:41:47,334 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:41:49,016 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.
+2016-05-29 17:42:30,340 - eulercuda - INFO - Program started
+2016-05-29 17:42:30,341 - eulercuda.readLmersKmersCuda - INFO - started.
+2016-05-29 17:42:30,341 - eulercuda.pyencode.encode_lmer_device - INFO - started.
+2016-05-29 17:42:32,048 - eulercuda.pyencode.encode_lmer_device - INFO - block_dim = (20, 1, 1), grid_dim = (4, 1, 1)
+2016-05-29 17:42:32,048 - eulercuda.pyencode.encode_lmer_device - INFO - Going to GPU.
+2016-05-29 17:42:32,051 - eulercuda.pyencode.encode_lmer_device - INFO - Occupancy = 16.666666666666664
+2016-05-29 17:42:32,051 - eulercuda.pyencode.encode_lmer_device - INFO - finished. Leaving.
+2016-05-29 17:42:32,051 - eulercuda.pyencode.compute_kmer_device - INFO - started.
+2016-05-29 17:42:33,740 - eulercuda.pyencode.compute_kmer_device - INFO - Going to GPU.

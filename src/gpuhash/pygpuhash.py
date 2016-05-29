@@ -48,7 +48,7 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
         }
         __syncthreads();
     }
-    """, keep = True)
+    """, options=['--compiler-options', '-Wall'])
     np_d_keys = np.array(d_keys, dtype = np.uint64)
     np_d_offset = np.zeros(np_d_keys.size, dtype = np.uint)
     # np_d_offset = np.zeros(d_offset, dtype = np.uint)
@@ -119,7 +119,7 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
 
         }
     }
-    """, keep = True)
+    """, options=['--compiler-options', '-Wall'])
     copy_to_bucket = mod.get_function("copyToBucket")
 
     d_keys = np.array(d_keys, dtype = np.uint64)
@@ -202,7 +202,7 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
             }
         }
     }
-    """)
+    """, options=['--compiler-options', '-Wall'])
     bucket_sort = mod.get_function('bucketSort')
     # TODO: Figure out why d_TK and d_TV come out with only 1 element each.
     d_TV = np.empty(d_bufferV.size, dtype = np.uint64)

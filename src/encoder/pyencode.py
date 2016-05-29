@@ -1,8 +1,9 @@
 import numpy as np
 import pycuda.driver as drv
-import pycuda.autoinit
+import pycuda.autoinit as autoinit
 from pycuda.compiler import SourceModule
 import logging
+import pycuda
 from pycuda.tools import OccupancyRecord
 
 module_logger = logging.getLogger('eulercuda.pyencode')
@@ -68,7 +69,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
 
         __syncthreads();
     }
-    """)
+    """, options=['--compiler-options', '-Wall'])
 
     encode_lmer = mod.get_function("encodeLmerDevice")
     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
@@ -108,7 +109,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             KEY_PTR pkmers,
             KEY_PTR skmers,
             KEY_T validBitMask,
-            const unsigned int readCount
+            unsigned int readCount
         )
     {
        const unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y) + (blockDim.x * blockDim.y * blockIdx.x) + (blockDim.x * threadIdx.y) + threadIdx.x;
@@ -124,10 +125,10 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             pkmers[tid] = LMER_PREFIX(lmer,validBitMask);
             //find suffix
             skmers[tid] = LMER_SUFFIX(lmer,validBitMask);
-            __syncthreads();
+           // __syncthreads();
         }
     }
-    """)
+    """, options=['--compiler-options', '-Wall'])
     compute_kmer = mod.get_function("computeKmerDevice")
     # pkmers = np.zeroes_like(lmers)
     # skmers = np.zeroes_like(lmers)
@@ -148,6 +149,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             np.uint(readCount),
             block = block_dim, grid = grid_dim
         )
+    # autoinit.context.synchronize()
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, readLength)
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
@@ -201,7 +203,7 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
             __syncthreads();
         }
     }
-    """, keep = True)
+    """, options=['--compiler-options', '-Wall'])
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
 #     block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
