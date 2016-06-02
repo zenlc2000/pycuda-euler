@@ -82,14 +82,14 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
         logger.info("Going to GPU.")
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
-                    np.uint(lmerLength),
+                    np.uintc(lmerLength),
                     block = block_dim,
                     grid = grid_dim,
                     shared = readLength + 31 )#int(entriesCount) + 31) #max(readLength) + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
     logger.info("finished. Leaving.")
 
@@ -145,13 +145,13 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             drv.InOut(lmers),
             drv.Out(pkmers),
             drv.Out(skmers),
-            np.uint64(kmerBitMask),
-            np.uint(readCount),
+            np.ulonglong(kmerBitMask),
+            np.uintc(readCount),
             block = block_dim, grid = grid_dim
         )
     # autoinit.context.synchronize()
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("leaving.")
@@ -213,18 +213,18 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
         grid_dim = (readCount // readLength, 1, 1)
 
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
-    np_lmerLength = np.uint(lmerLength)
+    np_lmerLength = np.uintc(lmerLength)
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         logger.info("Going to GPU.")
         encode_lmer_complement(
-            drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uint(readCount),
+            drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uintc(readCount),
             block = block_dim, grid = grid_dim,  shared = readLength + 31
         )
     else:
         print("Problem with data to GPU")
         logger.info("problem with data to GPU.")
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, readLength)
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")

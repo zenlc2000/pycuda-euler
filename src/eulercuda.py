@@ -56,9 +56,12 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     kmerMap = {}
     lmerMap = {}
 
-    buffer = np.array(readBuffer, dtype = 'S')
+    # numpy type 'S' == Python-compatible string
+    # numpy type 'Q' == C unsigned long long
+    # numpu type 'I' == C unsigned int
+    buffer = np.array(readBuffer).astype('S')
     nbr_values = buffer.size * buffer.dtype.itemsize
-    d_lmers = np.zeros(buffer.size, dtype = np.uint64)
+    d_lmers = np.zeros(buffer.size).astype('Q')
     d_pkmers = np.zeros_like(d_lmers)
     d_skmers = np.zeros_like(d_lmers)
 
