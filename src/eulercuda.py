@@ -101,31 +101,31 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     h_skmersR = np.array(d_skmers)
 
     lmerEmpty, kmerEmpty = 0, 0
-
+    validLmerCount = readLength - lmerLength + 1
     # Here he fills the kmerMap and lmerMap with a nested for loop
-    # for j in range(readToProcess):
-    #     for i in range(validLmerCount):
-    for index in range(readToProcess):
-        # index = j * readLength + i
-        kmerMap[h_pkmersF[index]] = 1
-        kmerMap[h_skmersF[index]] = 1
-        kmerMap[h_pkmersR[index]] = 1
-        kmerMap[h_skmersR[index]] = 1
+    for j in range(readToProcess):
+        for i in range(validLmerCount):
+         # for index in range(readToProcess):
+            index = j * readLength + i
+            kmerMap[h_pkmersF[index]] = 1
+            kmerMap[h_skmersF[index]] = 1
+            kmerMap[h_pkmersR[index]] = 1
+            kmerMap[h_skmersR[index]] = 1
 
-        if h_lmersF[index] == 0:
-            lmerEmpty += 1
-        else:
-            if lmerMap.get(h_lmersF[index]) == None:
-                lmerMap[h_lmersF[index]] = 1
+            if h_lmersF[index] == 0:
+                lmerEmpty += 1
             else:
-                lmerMap[h_lmersF[index]] += 1
-        if h_lmersR[index] == 0:
-            lmerEmpty += 1
-        else:
-            if lmerMap.get(h_lmersR[index]) == None:
-                lmerMap[h_lmersR[index]] = 1
+                if lmerMap.get(h_lmersF[index]) == None:
+                    lmerMap[h_lmersF[index]] = 1
+                else:
+                    lmerMap[h_lmersF[index]] += 1
+            if h_lmersR[index] == 0:
+                lmerEmpty += 1
             else:
-                lmerMap[h_lmersR[index]] += 1
+                if lmerMap.get(h_lmersR[index]) == None:
+                    lmerMap[h_lmersR[index]] = 1
+                else:
+                    lmerMap[h_lmersR[index]] += 1
     # readProcessed += readToProcess
     # readToProcess -= readCount
     # if readCount < CUDA_NUM_READS:
@@ -231,7 +231,8 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
     # setStatItem(NM_KMER_COUNT, kmerCount);
 
 
-    logger.info('lmerCount = %d, kmerCount = %d' % (lmerCount, kmerCount))
+    logger.info('lmerCount = %d' % (lmerCount))
+    logger.info('projected kmer count: %s, actual: %s' % ((readCount * (readLength - lmerLength)), kmerCount))
     # TODO: return d_TK,  d_TV, tableLength,  d_bucketSize,  bucketCount)
     # TODO: Test pygpuhash
     # =======> pygpuhash.create_hash_table(d_kmerKeys, d_kmerValues, kmerCount)
@@ -351,7 +352,7 @@ def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tupl
     # unsigned int  	edgeCount=0;
     # unsigned int 	vertexCount=0;
     # unsigned int 	readCount=0;
-    logging.info('Openinp %s' % (infile))
+    logger.info('Openinp %s' % (infile))
 
     extension = infile.split('.')[-1]
     # buffer = Fasta(open(infile))
@@ -366,7 +367,7 @@ def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tupl
     # cull out the shorties
     buffer = [r for r in buffer if len(r) == readLength]
     readCount = len(buffer)
-    logging.info("Got %s reads." % (readCount))
+    logger.info("Got %s reads." % (readCount))
 
     # total_base_pairs = readCount * readLength
     evList = []

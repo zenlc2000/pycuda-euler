@@ -83,9 +83,9 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
         encode_lmer(drv.In(buffer),
                     drv.Out(d_lmers),
                     np.uintc(lmerLength),
-                    block = block_dim,
-                    grid = grid_dim,
-                    shared = readLength + 31 )#int(entriesCount) + 31) #max(readLength) + 31)
+                    block=block_dim,
+                    grid=grid_dim,
+                    shared=readLength + 31)#int(entriesCount) + 31) #max(readLength) + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
     devdata = pycuda.tools.DeviceData()
@@ -142,7 +142,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logger.info("Going to GPU.")
         compute_kmer(
-            drv.InOut(lmers),
+            drv.In(lmers),
             drv.Out(pkmers),
             drv.Out(skmers),
             np.ulonglong(kmerBitMask),
