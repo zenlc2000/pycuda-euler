@@ -70,8 +70,12 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     #     readToProcess = readCount
     # else:
     #     readToProcess = CUDA_NUM_READS
-
-    readToProcess = readCount
+    CUDA_NUM_READS = 1024 * 32
+    if readCount < CUDA_NUM_READS:
+        readToProcess = readCount
+    else:
+        readToProcess = CUDA_NUM_READS
+    # readToProcess = readCount
     kmerBitMask = 0
 
     # bufferSize = sum(sys.getsizeof(seq) for seq in readBuffer)
@@ -103,29 +107,29 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     lmerEmpty, kmerEmpty = 0, 0
     validLmerCount = readLength - lmerLength + 1
     # Here he fills the kmerMap and lmerMap with a nested for loop
-    for j in range(readToProcess):
-        for i in range(validLmerCount):
-         # for index in range(readToProcess):
-            index = j * readLength + i
-            kmerMap[h_pkmersF[index]] = 1
-            kmerMap[h_skmersF[index]] = 1
-            kmerMap[h_pkmersR[index]] = 1
-            kmerMap[h_skmersR[index]] = 1
+    # for j in range(readToProcess):
+    #     for i in range(validLmerCount):
+    for index in range(readToProcess):
+        # index = j * readLength + i
+        kmerMap[h_pkmersF[index]] = 1
+        kmerMap[h_skmersF[index]] = 1
+        kmerMap[h_pkmersR[index]] = 1
+        kmerMap[h_skmersR[index]] = 1
 
-            if h_lmersF[index] == 0:
-                lmerEmpty += 1
+        if h_lmersF[index] == 0:
+            lmerEmpty += 1
+        else:
+            if lmerMap.get(h_lmersF[index]) == None:
+                lmerMap[h_lmersF[index]] = 1
             else:
-                if lmerMap.get(h_lmersF[index]) == None:
-                    lmerMap[h_lmersF[index]] = 1
-                else:
-                    lmerMap[h_lmersF[index]] += 1
-            if h_lmersR[index] == 0:
-                lmerEmpty += 1
+                lmerMap[h_lmersF[index]] += 1
+        if h_lmersR[index] == 0:
+            lmerEmpty += 1
+        else:
+            if lmerMap.get(h_lmersR[index]) == None:
+                lmerMap[h_lmersR[index]] = 1
             else:
-                if lmerMap.get(h_lmersR[index]) == None:
-                    lmerMap[h_lmersR[index]] = 1
-                else:
-                    lmerMap[h_lmersR[index]] += 1
+                lmerMap[h_lmersR[index]] += 1
     # readProcessed += readToProcess
     # readToProcess -= readCount
     # if readCount < CUDA_NUM_READS:

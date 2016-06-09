@@ -51,21 +51,22 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     """, options=['--compiler-options', '-Wall'])
     np_d_keys = np.array(d_keys).astype('Q')
     keys_gpu = gpuarray.to_gpu(np_d_keys)
-    offset_gpu = gpuarray.zeros(len(d_keys), dtype = 'I')
+    offset_gpu = gpuarray.zeros(len(d_keys), dtype='I')
     count_gpu = gpuarray.to_gpu(count)
-    block_dim = (512, 1, 1)
-    if (d_length//512) == 0:
+    block_dim = (1024, 1, 1)
+    if (d_length//1024) == 0:
         grid_dim = (1, 1, 1)
     else:
-        grid_dim = (d_length//512, 1, 1)
+        grid_dim = (d_length//1024, 1, 1)
     phase1 = mod.get_function("phase1")
-    phase1( keys_gpu, offset_gpu, np.uintc(d_length), count_gpu,
-            np.uintc(bucketCount),grid = grid_dim, block = block_dim)
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    phase1(keys_gpu, offset_gpu, np.uintc(d_length), count_gpu,
+            np.uintc(bucketCount), grid=grid_dim, block=block_dim)
     d_offset = offset_gpu.get()
     count = count_gpu.get()
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     logger.info('Finished. Leaving.')
  #   return [d_offset, d_bucketSize]
     return d_offset, count
@@ -133,11 +134,12 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     # start_gpu = gpuarray.to_gpu(np_d_start)
     # bufferK_gpu = gpuarray.to_gpu(np_d_bufferK)
     # bufferV_gpu = gpuarray.to_gpu(np_d_bufferV)
-    block_dim = (512, 1, 1)
-    if (d_length//512) == 0:
+    block_dim = (1024, 1, 1)
+    if (d_length//1024) == 0:
         grid_dim = (1, 1, 1)
     else:
-        grid_dim = (d_length//512, 1, 1)
+        grid_dim = (d_length//1024, 1, 1)
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     copy_to_bucket(
         keys_gpu,
         values_gpu,
@@ -151,8 +153,8 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         block = block_dim
     )
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info('Finished. Leaving.')
     # d_start  = start_gpu.get()
@@ -222,9 +224,9 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
     }
     """, options=['--compiler-options', '-Wall'])
     bucket_sort = mod.get_function('bucketSort')
-    # TODO: Figure out why d_TK and d_TV come out with only 1 element each.
     block_dim = (32, 1, 1)
     grid_dim = (bucketCount, 1, 1)#(32, 1, 1)
+    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     bucket_sort(
         drv.In(d_bufferK),
         drv.In(d_bufferV),
@@ -233,13 +235,13 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
         np.uintc(bucketCount),
         drv.Out(d_TK),
         drv.Out(d_TV),
-        grid = grid_dim,
-        block = block_dim # What about shared? Original source doesn't have it.
+        grid=grid_dim,
+        block=block_dim # What about shared? Original source doesn't have it.
 
     )
     devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
     # return [d_TK, d_TV]

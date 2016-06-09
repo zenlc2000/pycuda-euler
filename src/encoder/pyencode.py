@@ -5,7 +5,7 @@ from pycuda.compiler import SourceModule
 import logging
 import pycuda
 from pycuda.tools import OccupancyRecord
-
+from subprocess import call
 module_logger = logging.getLogger('eulercuda.pyencode')
 
 # Globals
@@ -62,9 +62,9 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                                     shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
                                     shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
                                     codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
-        };
+        }
         lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
-
+        printf(" offset = %u, lmer = %llu ", (tid + rOffset),lmer);
         lmers[rOffset+tid]=lmer;
 
         __syncthreads();
@@ -72,10 +72,11 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     """, options=['--compiler-options', '-Wall'])
 
     encode_lmer = mod.get_function("encodeLmerDevice")
-    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    if readLength < max_threads:
-        block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength, 1, 1)
+    # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    # if readLength < max_threads:
+    #     block_dim = (readLength, 1, 1)
+    #     grid_dim = (readCount // readLength, 1, 1)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
@@ -88,6 +89,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                     shared=readLength + 31)#int(entriesCount) + 31) #max(readLength) + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
+    logger.info("Generated %s lmers." % (len(d_lmers)))
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
@@ -133,11 +135,11 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     # pkmers = np.zeroes_like(lmers)
     # skmers = np.zeroes_like(lmers)
 
-#     block_dim, grid_dim = getOptimalLaunchConfiguration(len(lmers))
-    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    if readLength < max_threads:
-        block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength, 1, 1)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
+#     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+#     if readLength < max_threads:
+#         block_dim = (readLength, 1, 1)
+#         grid_dim = (readCount // readLength, 1, 1)
 
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logger.info("Going to GPU.")
@@ -206,11 +208,11 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
     """, options=['--compiler-options', '-Wall'])
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
-#     block_dim, grid_dim = getOptimalLaunchConfiguration(entriesCount)
-    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    if readLength < max_threads:
-        block_dim = (readLength, 1, 1)
-        grid_dim = (readCount // readLength, 1, 1)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
+    # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
+    # if readLength < max_threads:
+    #     block_dim = (readLength, 1, 1)
+    #     grid_dim = (readCount // readLength, 1, 1)
 
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_lmerLength = np.uintc(lmerLength)
@@ -232,35 +234,42 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
 
 # getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
 
-def getOptimalLaunchConfiguration (threadCount):
+def getOptimalLaunchConfiguration (threadCount, threadPerBlock):
     """
     :param threadCount:
     :return: block_dim, grid_dim - 3-tuples for block and grid x, y, and z
     """
-    max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    max_grid_x = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_GRID_DIM_X)
-    grid_x = 1
-    grid_y = 1
-    block_dim = (max_threads, 1, 1)
-    if threadCount > max_threads:
-        grid_y = threadCount // max_threads
-        if threadCount % max_threads > 0:
-            grid_y += 1
-        grid_x = grid_y // 65535 + 1
-        if grid_y > 65535:
-            grid_y = 65535
+    block = {'x': threadPerBlock, 'y': 1, 'z': 1}
+    grid = {'x': 1, 'y': 1, 'z': 1}
 
-    grid_dim = (grid_x, grid_y, 1)
-
+    if threadCount > block['x']:
+        grid['y'] = threadCount // block['x']
+        if threadCount % block['x'] > 0:
+            grid['y'] += 1
+        grid['x'] = grid['y'] // 65535 + 1
+        if grid['y'] > 65535:
+            grid['y'] = 65535
+    block_dim = (block['x'], block['y'], block['z'])
+    grid_dim = (grid['x'], grid['y'], grid['z'])
     return block_dim, grid_dim
-
-
-            #
-    # if threadCount > max_threads:
-    #     if (threadCount // max_threads) > max_grid_x:
-    #         grid_y += 1
-    #     else:
-    #         grid_x = (threadCount // max_threads) + 1
-    #
-    #
-
+# 	getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
+#
+# extern "C" void getOptimalLaunchConfigCustomized(unsigned int threadCount,
+# 		dim3 * grid, dim3 * block, unsigned int readLength) {
+#
+# 	*block = make_uint3(readLength, 1, 1);
+# 	*grid = make_uint3(1, 1, 1);
+#
+# 	if (threadCount > block->x) {
+# 		grid->y = threadCount / (block->x);
+# 		if (threadCount % (block->x) > 0)
+# 			grid->y++;
+# 		grid->x = grid->y / 65535 + 1;
+# 		grid->y = (grid->y > 65535 ) ? 65535 : grid->y;
+# 		grid->z = 1;
+# 	}
+# }
+# extern "C" void getOptimalLaunchConfiguration(unsigned int threadCount,
+# 		dim3 * grid, dim3 * block) {
+# 	getOptimalLaunchConfigCustomized(threadCount, grid, block, 512);
+# }
