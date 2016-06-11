@@ -5,10 +5,7 @@ from pycuda.compiler import SourceModule
 import logging
 import pycuda
 from pycuda.tools import OccupancyRecord
-from subprocess import call
 module_logger = logging.getLogger('eulercuda.pyencode')
-
-# Globals
 
 
 def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
@@ -72,10 +69,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     """, options=['--compiler-options', '-Wall'])
 
     encode_lmer = mod.get_function("encodeLmerDevice")
-    # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    # if readLength < max_threads:
-    #     block_dim = (readLength, 1, 1)
-    #     grid_dim = (readCount // readLength, 1, 1)
+
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
     logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
@@ -86,7 +80,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                     np.uintc(lmerLength),
                     block=block_dim,
                     grid=grid_dim,
-                    shared=readLength + 31)#int(entriesCount) + 31) #max(readLength) + 31)
+                    shared=readLength + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
     logger.info("Generated %s lmers." % (len(d_lmers)))
@@ -94,7 +88,6 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
     logger.info("finished. Leaving.")
-
 
 
 def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCount):
@@ -132,14 +125,8 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     }
     """, options=['--compiler-options', '-Wall'])
     compute_kmer = mod.get_function("computeKmerDevice")
-    # pkmers = np.zeroes_like(lmers)
-    # skmers = np.zeroes_like(lmers)
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-#     max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-#     if readLength < max_threads:
-#         block_dim = (readLength, 1, 1)
-#         grid_dim = (readCount // readLength, 1, 1)
 
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
         logger.info("Going to GPU.")
@@ -149,9 +136,8 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             drv.Out(skmers),
             np.ulonglong(kmerBitMask),
             np.uintc(readCount),
-            block = block_dim, grid = grid_dim
+            block=block_dim, grid=grid_dim
         )
-    # autoinit.context.synchronize()
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
@@ -159,7 +145,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     logger.info("leaving.")
 
 
-def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmerLength):
+def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength):
     logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -209,10 +195,6 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-    # max_threads = drv.Device.get_attribute(drv.Context.get_device(), drv.device_attribute.MAX_THREADS_PER_BLOCK)
-    # if readLength < max_threads:
-    #     block_dim = (readLength, 1, 1)
-    #     grid_dim = (readCount // readLength, 1, 1)
 
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_lmerLength = np.uintc(lmerLength)
@@ -220,7 +202,7 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
         logger.info("Going to GPU.")
         encode_lmer_complement(
             drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uintc(readCount),
-            block = block_dim, grid = grid_dim,  shared = readLength + 31
+            block=block_dim, grid=grid_dim,  shared=readLength + 31
         )
     else:
         print("Problem with data to GPU")
@@ -237,6 +219,7 @@ def compute_lmer_complement_device (buffer, readCount, d_lmers, readLength, lmer
 def getOptimalLaunchConfiguration (threadCount, threadPerBlock):
     """
     :param threadCount:
+    :param threadPerBlock:
     :return: block_dim, grid_dim - 3-tuples for block and grid x, y, and z
     """
     block = {'x': threadPerBlock, 'y': 1, 'z': 1}
@@ -254,22 +237,3 @@ def getOptimalLaunchConfiguration (threadCount, threadPerBlock):
     return block_dim, grid_dim
 # 	getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
 #
-# extern "C" void getOptimalLaunchConfigCustomized(unsigned int threadCount,
-# 		dim3 * grid, dim3 * block, unsigned int readLength) {
-#
-# 	*block = make_uint3(readLength, 1, 1);
-# 	*grid = make_uint3(1, 1, 1);
-#
-# 	if (threadCount > block->x) {
-# 		grid->y = threadCount / (block->x);
-# 		if (threadCount % (block->x) > 0)
-# 			grid->y++;
-# 		grid->x = grid->y / 65535 + 1;
-# 		grid->y = (grid->y > 65535 ) ? 65535 : grid->y;
-# 		grid->z = 1;
-# 	}
-# }
-# extern "C" void getOptimalLaunchConfiguration(unsigned int threadCount,
-# 		dim3 * grid, dim3 * block) {
-# 	getOptimalLaunchConfigCustomized(threadCount, grid, block, 512);
-# }

@@ -250,17 +250,20 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
 def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength, d_bucketSize, bucketCount):
     logger = logging.getLogger('eulercuda.pygpuhash.create_hash_table_device')
     logger.info("started.")
-    d_offset = np.zeros(len(d_keys), np.uintc)
     # d_start = np.zeros(bucketDataSize, dtype = np.uint32)
+    KEY_SIZE = sys.getsizeof(np.ulonglong)
+    VALUE_SIZE = sys.getsizeof(np.uintc)
+    BUCKET_KEY_SIZE = KEY_SIZE * MAX_BUCKET_ITEM
+    BUCKET_VALUE_SIZE = VALUE_SIZE * MAX_BUCKET_ITEM
 
 
     bucketCount = (d_length // 409) + 1 # ceil
 
     dataSize = d_length * sys.getsizeof(np.uintc)
     bucketDataSize = bucketCount * sys.getsizeof(np.uintc)
-    d_bucketSize = np.zeros(bucketCount, dtype = 'I')
+    d_bucketSize = np.zeros(bucketDataSize, dtype='I')
     # d_bucketSize[0] = bucketDataSize
-    d_offset = np.zeros(dataSize, dtype = 'I')
+    d_offset = np.zeros(dataSize, dtype='I')
     #   d_bucketSize = np.empty(bucketDataSize, dtype = np.uint)
     #   think d_bucketSize needs to be a 2D array
     # result = \
@@ -269,7 +272,7 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
     d_offset, d_bucketSize = phase1_device(d_keys, d_offset, d_length, d_bucketSize, bucketCount)
 
 #/************  Calculating Start of each bucket (prefix sum of Count) **********/
-    d_start = np.zeros(bucketCount, dtype = 'I')
+    d_start = np.zeros(bucketDataSize, dtype='I')
     knl = ExclusiveScanKernel(np.uintc, "a+b", 0)
     # flat_bucketsize = np.array(d_bucketSize.flatten())
     np_d_start = gpuarray.to_gpu(d_bucketSize)
@@ -278,16 +281,16 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
     logger.info('Post scan.')
     d_start = np_d_start.get()
 
-    d_bufferK = np.zeros(d_length).astype(np.ulonglong)
-    d_bufferV = np.zeros(d_length).astype(np.uintc)
+    d_bufferK = np.zeros(d_length * sys.getsizeof(np.ulonglong)).astype(np.ulonglong)
+    d_bufferV = np.zeros(d_length * sys.getsizeof(np.uintc)).astype(np.uintc)
     # / ** ** ** ** ** ** ** *Cuckoo Hashing ** ** ** ** ** ** ** ** ** /
     # result = \
     copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV)
     # d_bufferK = result[0]
     # d_bufferV = result[1]
     # d_start = result[2]
-    d_TK = np.zeros(d_bufferV.size, dtype = 'Q')
-    d_TV = np.zeros(d_bufferK.size, dtype = 'I')
+    d_TK = np.zeros(bucketCount * BUCKET_KEY_SIZE, dtype='Q')
+    d_TV = np.zeros(bucketCount * BUCKET_VALUE_SIZE, dtype='I')
     # result = \
     bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount, d_TK, d_TV)
     tableLength = bucketCount * MAX_BUCKET_ITEM

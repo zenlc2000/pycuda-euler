@@ -21,8 +21,6 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     :return:
     """
     logger = logging.getLogger('eulercuda.pydebruijn.debruijn_count')
-
-
     logger.info("started.")
     mod = SourceModule("""
     #include <stdio.h>
@@ -138,10 +136,10 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
 
             //printf(" transitionTo = %llu, transitionFrom = %llu ",transitionTo, transitionFrom);
 
-            lcount[tid] = lmerValue;
-            ecount[tid] = lmerValue;
+            lcount[(prefixIndex << 2) + transitionTo] = lmerValue;
+            ecount[(suffixIndex << 2) + transitionFrom] = lmerValue;
 
-            //printf(" lcountIndex = %llu, ecountIndex = %llu ", (prefixIndex << 2)+ transitionTo, (suffixIndex << 2)+ transitionFrom);
+            printf(" lcountIndex = %llu, ecountIndex = %llu ", (prefixIndex << 2)+ transitionTo, (suffixIndex << 2)+ transitionFrom);
             //printf(" lcount = %u, ecount = %u ",  lcount[(prefixIndex << 2) + transitionTo], ecount[(suffixIndex << 2) + transitionFrom]);
         }
     }
@@ -149,8 +147,10 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     d_lmerKeys = np.array(d_lmerKeys, dtype=np.ulonglong)
     d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
 
+    np_d_lcount = gpuarray.to_gpu(d_lcount)
+    np_d_ecount = gpuarray.to_gpu(d_ecount)
     debruijn_count = mod.get_function("debruijnCount")
-    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount,128)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount,512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     debruijn_count(
         drv.In(d_lmerKeys),
@@ -160,16 +160,19 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
         drv.In(d_TV),
         drv.In(d_bucketSize),
         np.uintc(bucketCount),
-        drv.Out(d_lcount),
-        drv.Out(d_ecount),
+        np_d_lcount,
+        np_d_ecount,
         np.ulonglong(valid_bitmask),
         block=block_dim, grid=grid_dim
     )
+    np_d_lcount.get(d_lcount)
+    np_d_ecount.get(d_ecount)
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_lcount, d_ecount
 
 
 def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
@@ -302,7 +305,6 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
     setup_vertices = mod.get_function("setupVertices")
     block_dim, grid_dim = getOptimalLaunchConfiguration(kmerCount, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
-  #  d_ev.copy_to_gpu()
     setup_vertices(
         drv.In(d_kmerKeys),
         np.uintc(kmerCount),
@@ -452,8 +454,8 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
              unsigned int loffset = loffsets[(prefixIndex << 2) + transitionTo];
              unsigned int eoffset = eoffsets[(suffixIndex << 2) + transitionFrom];
 
-            printf(" loffset = %u, eoffset = %u ", (prefixIndex << 2) + transitionTo, (suffixIndex << 2) + transitionFrom);
-          //  printf(" loffset = %u, eoffset = %u ", loffset, eoffset);
+            //printf(" loffset = %u, eoffset = %u ", (prefixIndex << 2) + transitionTo, (suffixIndex << 2) + transitionFrom);
+              printf(" loffset = %u, eoffset = %u ", loffset, eoffset);
             unsigned int lmerOffset = lmerOffsets[tid];
             //printf(" lmerOffset = %u ", lmerOffset);
             for (unsigned int i = 0; i < lmerValue; i++)
@@ -514,44 +516,45 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     logger = logging.getLogger('eulercuda.pydebruijn.construct_debruijn_graph_device')
 
     logger.info("started.")
-    # pycuda has a parallel sum we can use instead of CUDPP. https://documen.tician.de/pycuda/array.html#module-pycuda.scan
+    # pycuda has a parallel sum we can use instead of CUDPP.
+    # https://documen.tician.de/pycuda/array.html#module-pycuda.scan
     k = l - 1
     valid_bitmask = 0
     for i in range(k * 2):
         valid_bitmask = (valid_bitmask << 1) | 1
-    logger.info("Bitmask = %s" % (valid_bitmask))
+    logger.info("Bitmask = %s" % valid_bitmask)
 
     # mem_size = (kmerCount) * sizeof(unsigned int) *4; // 4 - tuple for each kmer
     mem_size = kmerCount * sys.getsizeof(np.uintc) * 4
 
-    d_lcount = np.zeros(len(d_lmerValues), dtype=np.uintc)
+    d_lcount = np.zeros(mem_size, dtype=np.uintc)
 
     d_ecount = np.zeros_like(d_lcount)
-
+    d_lstart = np.zeros_like(d_lcount)
+    d_estart = np.zeros_like(d_lcount)
 
     # kernel call
-    debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
+    d_lcount, d_ecount = debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
                           d_lcount, d_ecount, valid_bitmask, readLength, readCount)
 
     #  we need to perform pre-fix scan on , lcount, ecount, lmerValues,
     #  lcount and ecount has equal number of elements ,4*kmercount
     #  lmer has lmerCount elements, choose whichever is larger
 
-    d_lstart = np.zeros_like(d_lcount)
-    d_estart = np.zeros_like(d_ecount)
 
+    # d_lcount = [l for l in d_lcount.tolist() if l < 1000]
+    # d_ecount = [e for e in d_ecount.tolist() if e < 1000]
     knl = ExclusiveScanKernel(np.uintc, "a+b", 0)
-    np_d_lcount = gpuarray.to_gpu(d_lcount)
+    np_d_lcount = gpuarray.to_gpu(np.array(d_lcount, dtype=np.uintc))
     knl(np_d_lcount)
     np_d_lcount.get(d_lstart)
 
-    np_d_ecount = gpuarray.to_gpu(d_ecount)
+    np_d_ecount = gpuarray.to_gpu(np.array(d_ecount, dtype=np.uintc))
     knl(np_d_ecount)
     np_d_ecount.get(d_estart)
 
-
     np_d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
-    d_lmerOffsets = np.zeros_like(np_d_lmerValues)
+    d_lmerOffsets = np.zeros_like(np_d_lmerValues) #(sys.getsizeof(np.uintc) * 4 * kmerCount, dtype=np.uintc)
     np_d_lmerValues = gpuarray.to_gpu(np_d_lmerValues)
     knl(np_d_lmerValues)
     np_d_lmerValues.get(d_lmerOffsets)
@@ -562,39 +565,39 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     d_kmerKeys = np.array(d_kmerKeys, dtype=np.ulonglong)
 
+    struct_size = sys.getsizeof(np.ulonglong) + (4 * sys.getsizeof(np.uintc))
     d_ev = {
-        'vid': np.zeros(d_kmerKeys.size, dtype=np.ulonglong),
-        'ep': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        'ecount': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        'lp': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        'lcount': np.zeros(d_kmerKeys.size, dtype=np.uintc)
+        'vid': np.zeros(struct_size, dtype=np.ulonglong),
+        'ep': np.zeros(struct_size, dtype=np.uintc),
+        'ecount': np.zeros(struct_size, dtype=np.uintc),
+        'lp': np.zeros(struct_size, dtype=np.uintc),
+        'lcount': np.zeros(struct_size, dtype=np.uintc)
     }
     d_ee = {
-        'eid': np.zeros(d_kmerKeys.size, dtype=np.ulonglong),
-        'v1': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        'v2': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        's': np.zeros(d_kmerKeys.size, dtype=np.uintc),
-        'pad': np.zeros(d_kmerKeys.size, dtype=np.uintc)
+        'eid': np.zeros(struct_size, dtype=np.ulonglong),
+        'v1': np.zeros(struct_size, dtype=np.uintc),
+        'v2': np.zeros(struct_size, dtype=np.uintc),
+        's': np.zeros(struct_size, dtype=np.uintc),
+        'pad': np.zeros(struct_size, dtype=np.uintc)
     }
 
     setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
-                          bucketCount, d_ev, d_lcount, d_lstart,d_ecount, d_estart)
-    # d_ev.copy_from_gpu()
-    # setupEdges << < grid, block >> > (
-    # d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount, *d_l, *d_e, *d_ee,
-    # d_lstart, d_estart, validBitMask);
-    d_l = np.zeros(d_lstart.size, dtype=np.uintc)
-    d_e = np.zeros(d_estart.size, dtype=np.uintc)
+                          bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart)
+
+    d_l = np.zeros(sys.getsizeof(np.uintc) * len(ecount), dtype=np.uintc)
+    d_e = np.zeros(sys.getsizeof(np.uintc) * len(ecount), dtype=np.uintc)
     d_lmerKeys = np.array(d_lmerKeys, dtype=np.ulonglong)
     d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
     setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed,
                        bucketCount, d_l, d_e, d_ee, d_lstart, d_estart, valid_bitmask)
     logger.info('Finished. Leaving.')
+    return d_ev, d_ee, d_l, d_e
 
 
-def getOptimalLaunchConfiguration (threadCount, threadPerBlock=32):
+def getOptimalLaunchConfiguration(threadCount, threadPerBlock=32):
     """
     :param threadCount:
+    :param threadPerBlock:
     :return: block_dim, grid_dim - 3-tuples for block and grid x, y, and z
     """
     block = {'x': threadPerBlock, 'y': 1, 'z': 1}

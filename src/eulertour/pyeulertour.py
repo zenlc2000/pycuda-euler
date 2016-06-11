@@ -4,12 +4,23 @@ import numpy as np
 import pycuda.driver as drv
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
-from pycuda.driver import device_attribute
 import logging
+from encoder.pyencode import getOptimalLaunchConfiguration
 
 module_logger = logging.getLogger('eulercuda.pyeulertour')
 
-def assign_successor_device():
+
+def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
+    """
+
+    :param d_ev:
+    :param d_l:
+    :param d_e:
+    :param vcount:
+    :param d_ee:
+    :param ecount:
+    :return:
+    """
     logger = logging.getLogger('eulercuda.pyeulertour.assign_successor_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -27,12 +38,27 @@ def assign_successor_device():
         }
     }
     """)
-
+    block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 512)
     assign_successor = mod.get_function("assignSuccessor")
+    assign_successor(
+        ev,
+        l,
+        e,
+        vcount,
+        ee,
+        ecount,
+        block=block_dim, grid=grid_dim
+    )
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("Finished. Leaving.")
 
 
 
-def construct_successor_graphP1_device():
+
+def construct_successor_graphP1_device(d_ee, d_v, ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.construct_successor_graphP1_device')
     logger.info("started.")
     mod = SourceModule("""
@@ -51,6 +77,20 @@ def construct_successor_graphP1_device():
     """)
 
     construct_successor_graphP1 = mod.get_function("constructSuccessorGraphP1")
+    block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
+    construct_successor_graphP1(
+        e,
+        v,
+        ecount,
+        block=block_dim, grid=grid_dim
+    )
+
+
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("Finished. Leaving.")
 
 
 def construct_successor_graphP2_device():
@@ -73,6 +113,13 @@ def construct_successor_graphP2_device():
     """)
     construct_successor_graphP2 = mod.get_function("constructSuccessorGraphP2")
 
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("Finished. Leaving.")
+
+
 
 def calculate_circuit_graph_vertex_data_device():
     logger = logging.getLogger('eulercuda.pyeulertour.calculate_circuit_graph_vertex_data_device')
@@ -89,3 +136,31 @@ def calculate_circuit_graph_vertex_data_device():
     }
     """)
     calculate_circuit_graph_vertex_data = mod.get_function('calculateCircuitGraphVertexData')
+
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+    logger.info("Finished. Leaving.")
+
+
+def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vextexCount, kmerLength):
+    """
+
+    :param d_ev:
+    :param d_l:
+    :param d_e:
+    :param vcount:
+    :param d_ee:
+    :param ecount:
+    :param d_cg_edge:
+    :param cg_edgeCount:
+    :param cg_vextexCount:
+    :param kmerLength:
+    :return:
+    """
+    # Step 1:
+    # Assign successors
+    assign_successor_device(d_ev,d_l,d_e,vcount,d_ee,ecount)
+
+    construct_successor_graphP1_device(d_ee, d_v, ecount)

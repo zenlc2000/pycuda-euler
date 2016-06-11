@@ -3,6 +3,7 @@ import argparse
 import encoder.pyencode as enc
 import debruijn.pydebruijn as db
 import gpuhash.pygpuhash as gh
+import eulertour.pyeulertour as et
 import numpy as np
 from numpy import array
 import logging
@@ -12,7 +13,8 @@ import pycuda.driver
 
 pycuda.driver.set_debugging(True)
 
-def parse_fastq (filename):
+
+def parse_fastq(filename):
     """
     Read fastq formatted <filename> and return a dictionary of
     read_name : read
@@ -30,7 +32,7 @@ def parse_fastq (filename):
     return result
 
 
-def read_fastq (filename):
+def read_fastq(filename):
     """
     Read fastq formatted <filename> and return a list of reads
     """
@@ -42,12 +44,12 @@ def read_fastq (filename):
         return result
 
 
-def doErrorCorrection (readBuffer, readCount, ec_tuple_size, max_ec_pos):
+def doErrorCorrection(readBuffer, readCount, ec_tuple_size, max_ec_pos):
     return readCount
 
 
-def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
-                        kmerValues, kmerCount):
+def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
+                       kmerValues, kmerCount):
     """
 
     """
@@ -99,7 +101,7 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     h_skmersF = np.array(d_skmers)
 
     enc.compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength)
-    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength,readCount)
+    enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
     h_lmersR = np.array(d_lmers)
     h_pkmersR = np.array(d_pkmers)
     h_skmersR = np.array(d_skmers)
@@ -171,8 +173,8 @@ def readLmersKmersCuda (readBuffer, readLength, readCount, lmerLength, lmerKeys,
     return [lmerCount, kmerCount, lmerKeys, lmerValues, kmerKeys, kmerValues]
 
 
-def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,
-                            edgeCountList, vertexCountList):
+def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,
+                           edgeCountList, vertexCountList):
     """
     ///variables
 
@@ -213,7 +215,7 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
     d_TV = []
     tableLength = 0
     bucketCount = 0
-    d_bucketSize = [[],[]]
+    d_bucketSize = [[], []]
 
     coverage = 20
     d_ev = []
@@ -241,7 +243,7 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
     # TODO: Test pygpuhash
     # =======> pygpuhash.create_hash_table(d_kmerKeys, d_kmerValues, kmerCount)
     results = gh.create_hash_table_device(h_kmerKeys, h_kmerValues, kmerCount, d_TK, d_TV, tableLength,
-                                d_bucketSize, bucketCount)
+                                          d_bucketSize, bucketCount)
 
     tableLength = results[0]
     d_bucketSize = results[1]
@@ -265,14 +267,16 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
     # 		unsigned int ** d_e, //out
     # 		EulerEdge ** d_ee //out
 
-    db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
+    d_ev, d_ee, d_levEdge, d_entEdge = db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
                                        h_kmerKeys, kmerCount, lmerLength, d_TK, d_TV, d_bucketSize, bucketCount,
                                        d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList, readLength, readCount)
+    logger.info("Finished. Leaving")
 
 
+    # h_lmerKeys, h_lmerValues,lmerCount,h_kmerKeys,kmerCount,lmerLength,d_TK,
+    #                                d_TV,d_bucketSize,bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
 
-        # h_lmerKeys, h_lmerValues,lmerCount,h_kmerKeys,kmerCount,lmerLength,d_TK,
-        #                                d_TV,d_bucketSize,bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
+
 #       d_kmerKeys,kmerCount,l,d_TK, d_TV,d_bucketSize,bucketCount
 
 # d_bucketSeed needs to
@@ -316,30 +320,37 @@ def constructDebruijnGraph (readBuffer, readCount, readLength, lmerLength, evLis
 # unsigned int partialContigTimer = 0;
 
 
-def findEulerTour (evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile):
-    # TODO: Figure out what to do with these variables
-    # findEulerDevice(d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCount, & d_cg_edge,& cg_edgecount, & cg_vertexcount, l);
-    d_ev = array(evList)
-    d_levEdge = array(levEdgeList)
-    d_entEdge = array(entEdgeList)
-    d_ee = array(eeList)
+def findEulerTour(d_ev, t_ee, d_levEdge, d_entEdge, edgeCountList, vertexCountList, lmerLength, outfile):
+    """
 
-    # d_cg_edge, cg_vertexcount, cg_edgecount MAY be the output variables.
-    pyeulertour.find_euler_device(d_ev, d_levEdge, d_entEdge, vertexCount, d_ee)
-    # need to get cg_edgecount, d_cg_edge back
-    if cg_edgecount > 0:
-        cg_edge = array(d_cg_edge)
-        treeSize = pyeulertour.find_spanning_tree(cg_edge, cg_edgecount, cg_vertexcount)
+    :param ev_dict:
+    :param ee_dict:
+    :param levEdgeList:
+    :param entEdgeList:
+    :param edgeCount:
+    :param vertexCount:
+    :param lmerLength:
+    :param outfile:
+    :return:
+    """
+
+    et.findEulerDevice(
+        d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vextexCount, kmerLength
+    )
+
+
+
 
 def read_fasta(infilename):
     sequence = []
-    with open (infilename, 'r') as infile:
+    with open(infilename, 'r') as infile:
         for line in infile:
             if line[0] != '>':
                 sequence.append(line.strip().encode('ascii'))
     return sequence
 
-def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple_size):
+
+def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple_size):
     """
     Do the assemble
     """
@@ -386,7 +397,7 @@ def assemble2 (infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tupl
             readCount = doErrorCorrection(readBuffer, ec_tuple_size, max_ec_pos)
         constructDebruijnGraph(buffer, readCount, readLength,
                                lmerLength, evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList)
-        # findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList, lmerLength, outfile)
+        findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList, lmerLength, outfile)
 
 
 if __name__ == '__main__':
@@ -399,14 +410,14 @@ if __name__ == '__main__':
     logger.info('Program started')
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', action = 'store', dest = 'input_filename',
-                        help = 'Input Fie Name')
-    parser.add_argument('-o', action = 'store', dest = 'output_filename',
-                        help = 'Output File Name')
-    parser.add_argument('-k', action = 'store', dest = 'k', type = int,
-                        help = 'kmer size')
-    parser.add_argument('-d', action = 'store_true', default = False,
-                        help = 'Use DDFS')
+    parser.add_argument('-i', action='store', dest='input_filename',
+                        help='Input Fie Name')
+    parser.add_argument('-o', action='store', dest='output_filename',
+                        help='Output File Name')
+    parser.add_argument('-k', action='store', dest='k', type=int,
+                        help='kmer size')
+    parser.add_argument('-d', action='store_true', default=False,
+                        help='Use DDFS')
     results = parser.parse_args()
     # Need to process commandline args. Probably just copy=paste from disco3
     if results.input_filename == '':
