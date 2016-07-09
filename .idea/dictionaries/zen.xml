@@ -2,6 +2,7 @@
   <dictionary name="zen">
     <words>
       <w>bitmask</w>
+      <w>cedge</w>
       <w>cudpp</w>
       <w>debruijn</w>
       <w>devdata</w>

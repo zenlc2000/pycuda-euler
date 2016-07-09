@@ -1,4 +1,5 @@
 import os
+import gc
 import argparse
 import encoder.pyencode as enc
 import debruijn.pydebruijn as db
@@ -173,8 +174,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
     return [lmerCount, kmerCount, lmerKeys, lmerValues, kmerKeys, kmerValues]
 
 
-def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,
-                           edgeCountList, vertexCountList):
+def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList):
     """
     ///variables
 
@@ -267,38 +267,11 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     # 		unsigned int ** d_e, //out
     # 		EulerEdge ** d_ee //out
 
-    d_ev, d_ee, d_levEdge, d_entEdge = db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
+    d_ev, d_ee, d_levEdge, d_entEdge, kmerCount, edgeCount = db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount,
                                        h_kmerKeys, kmerCount, lmerLength, d_TK, d_TV, d_bucketSize, bucketCount,
-                                       d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList, readLength, readCount)
+                                       d_ev, d_levEdge, d_entEdge, d_ee, readLength, readCount)
     logger.info("Finished. Leaving")
-
-
-    # h_lmerKeys, h_lmerValues,lmerCount,h_kmerKeys,kmerCount,lmerLength,d_TK,
-    #                                d_TV,d_bucketSize,bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, edgeCountList)
-
-
-#       d_kmerKeys,kmerCount,l,d_TK, d_TV,d_bucketSize,bucketCount
-
-# d_bucketSeed needs to
-
-# pydebruijn.construct_Debruijn_Graph_Device(d_lmerKeys, d_lmerValues,lmerCount,
-#       d_kmerKeys,kmerCount,l,d_TK, d_TV,d_bucketSize,bucketCount)
-
-# TODO: Copy graph back from device
-# *vertexCount = kmerCount;
-# *ev=(EulerVertex *)malloc(sizeof(EulerVertex)* (*vertexCount));
-# *ee=(EulerEdge *)malloc(sizeof(EulerEdge)* (*edgeCount));
-# *levEdge=(unsigned int *)malloc(sizeof(unsigned int)* (*edgeCount));
-# *entEdge=(unsigned int * )malloc(sizeof(unsigned int)*(*edgeCount));
-
-# cutilSafeCall(cudaMemcpy(*ev, d_ev, sizeof(EulerVertex) * (*vertexCount),cudaMemcpyDeviceToHost));
-# cutilSafeCall(cudaMemcpy(*ee, d_ee, sizeof(EulerEdge)*(*edgeCount),cudaMemcpyDeviceToHost));
-# cutilSafeCall(cudaMemcpy(*levEdge, d_levEdge, sizeof(unsigned int)*(*edgeCount),cudaMemcpyDeviceToHost));
-# cutilSafeCall(cudaMemcpy(*entEdge, d_entEdge, sizeof(unsigned int)*(*edgeCount),cudaMemcpyDeviceToHost));
-
-
-
-
+    return d_ev, d_ee, d_levEdge, d_entEdge, kmerCount, edgeCount
 
 
 # /*variables*/
@@ -320,7 +293,22 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
 # unsigned int partialContigTimer = 0;
 
 
-def findEulerTour(d_ev, t_ee, d_levEdge, d_entEdge, edgeCountList, vertexCountList, lmerLength, outfile):
+def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
+    """
+    :param cg_edge:
+    :param cg_edgecount:
+    :param cg_vertexcount:
+    :param tree:
+    :return:
+    """
+    weights = []
+    for _ in cg_edgecount:
+        weights.append(1)
+
+    # Graph g(cg_vertexcount);
+
+
+def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
     """
 
     :param ev_dict:
@@ -328,20 +316,23 @@ def findEulerTour(d_ev, t_ee, d_levEdge, d_entEdge, edgeCountList, vertexCountLi
     :param levEdgeList:
     :param entEdgeList:
     :param edgeCount:
-    :param vertexCount:
+    :param vertexCount: kmerCount from debruijn graph
     :param lmerLength:
     :param outfile:
     :return:
     """
 
+    d_cg_edge = {} # CircuitEdge struct
+    cg_edgeCount = 0 # np.uintc
+    cg_vertexCount = 0 # np.uintc
+
     et.findEulerDevice(
-        d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vextexCount, kmerLength
-    )
+        d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
+        cg_edgeCount, cg_vertexCount, kmerLength)
+    if cg_edgeCount > 0:
+        treeSize = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree)
 
-
-
-
-def read_fasta(infilename):
+    def read_fasta(infilename):
     sequence = []
     with open(infilename, 'r') as infile:
         for line in infile:
@@ -387,17 +378,18 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     # total_base_pairs = readCount * readLength
     evList = []
     eeList = []
+    edgeCount = 0
     levEdgeList = []
     entEdgeList = []
-    edgeCountList = []
-    vertexCountList = []
+    edgeCount = 0
+    vertexCount = 0
 
     if readCount > 0:
         if errorCorrection:
             readCount = doErrorCorrection(readBuffer, ec_tuple_size, max_ec_pos)
-        constructDebruijnGraph(buffer, readCount, readLength,
-                               lmerLength, evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList)
-        findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCountList, vertexCountList, lmerLength, outfile)
+        eeList, evList, levEdgeList, entEdgeList, vertexCount, edgeCount = constructDebruijnGraph(buffer, readCount, readLength,
+                               lmerLength, evList, eeList, levEdgeList, entEdgeList)
+        findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile)
 
 
 if __name__ == '__main__':
@@ -410,14 +402,10 @@ if __name__ == '__main__':
     logger.info('Program started')
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', action='store', dest='input_filename',
-                        help='Input Fie Name')
-    parser.add_argument('-o', action='store', dest='output_filename',
-                        help='Output File Name')
-    parser.add_argument('-k', action='store', dest='k', type=int,
-                        help='kmer size')
-    parser.add_argument('-d', action='store_true', default=False,
-                        help='Use DDFS')
+    parser.add_argument('-i', action='store', dest='input_filename', help='Input Fie Name')
+    parser.add_argument('-o', action='store', dest='output_filename', help='Output File Name')
+    parser.add_argument('-k', action='store', dest='k', type=int, help='kmer size')
+    # parser.add_argument('-d', action='store_true', default=False, help='Use DDFS')
     results = parser.parse_args()
     # Need to process commandline args. Probably just copy=paste from disco3
     if results.input_filename == '':

@@ -18,7 +18,7 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     logger = logging.getLogger('eulercuda.pygpuhash.phase1_device')
     logger.info("started.")
     mod = SourceModule("""
-    #include <stdio.h>
+    //#include <stdio.h>
     typedef unsigned long long  KEY_T ;
     typedef KEY_T               *KEY_PTR;
     typedef unsigned int        VALUE_T;
@@ -76,7 +76,7 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     logger = logging.getLogger('eulercuda.pygpuhash.copy_to_bucket_device')
     logger.info("started.")
     mod = SourceModule("""
-    #include <stdio.h>
+   // #include <stdio.h>
     //typedef unsigned long long  KEY_T ;
     //typedef KEY_T               *KEY_PTR;
     //typedef unsigned int        VALUE_T;
@@ -153,8 +153,8 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         block = block_dim
     )
     devdata = pycuda.tools.DeviceData()
-    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info('Finished. Leaving.')
     # d_start  = start_gpu.get()
