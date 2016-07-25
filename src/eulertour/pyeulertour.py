@@ -516,11 +516,86 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
         assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
                                    circuitVertexSize, d_cg_edge,circuitGraphEdgeCount)
 
-        # h_cg_edge = np.zeros_like(d_cg_edge)
+        # h_cg_edge = np.zeros_ like(d_cg_edge)
         d_cg_edge.sort(order=['c1', 'c2'])
 
 
 
 
 
+def findSpanningTree(cgEdges,cg_edgecount, cg_vertexcount):
+    logger.info('Begin spanning tree search')
 
+    # int * with length=cg_edgecount
+    # with each value initially set to 1
+    weights = [1] * cg_edgecount
+
+    g = Graph(directed=false)
+    g.addVertex(cg_vertexcount)
+    
+    # edge_index 
+    indexMap =  g.new_edge_property('int')
+    weightMap = g.new_edge_property('int')
+
+    j = 0
+    for edge in cgEdges:
+        e = g.addEdge(edge.c1,edge.c2)
+        weightMap[e] = weights[j]
+        indexMap[e] = j
+        j += 1
+
+    index = g.new_edge_property('int')
+
+    # when called without the root argument this
+    # uses kruskal's algorithm
+    treeMap = min_spanning_tree(g,weightMap)
+
+
+def findEulerTour(ev, ee, levEdge, entEdge, edgeCount, vertexCount, l, outputFileName):
+
+    # timer variables
+    eulerTimer  = 0
+    mstTimer = 0
+    swipeTimer = 0
+    partialContigTimer = 0
+
+
+    # Graph Types
+    # EulerVertex *
+    d_ev = []
+    # EulerEdge *
+    d_ee = []
+    # uint*
+    d_levEdge = []
+    d_entEdge = []
+
+    # CircuitEdge *
+    d_cg_edge = []
+    # size vars (uint)
+    cg_edgecount = 0
+    cg_vertexcount = 0
+    # unsigned int *
+    tree = []
+    d_tree = []
+    # uint
+    treesize = 0
+
+    logger.info('Beginning findEulerTour')
+    # sets up initial vars
+    cg_edges = {}
+    # calls initDevice()
+    # copies graph to device
+    # params for findEulerDevice come from CUDA calls
+    findEulerDevice(d_ev, d_levEdge, d_entEdge,vertexCount, d_ee, edgeCount,d_cg_edge,cg_edgecount,cg_vertexcount,l)
+    
+    if cg_edgecount > 0:
+        # more cuda 
+        treeMap = findSpanningTree(cg_edges)
+        # more  cuda where memory is allocated based on the size of
+        # the tree
+    
+
+    generatePartialContig(outputFileName,d_ev,vertexcount,d_ee,edgecount,l)
+    # some cuda timer stuff
+    # memory deallocation
+    # calls resetDevice()
