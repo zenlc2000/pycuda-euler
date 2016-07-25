@@ -301,35 +301,33 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     :param tree:
     :return:
     """
-def findSpanningTree(cgEdges,cg_edgecount, cg_vertexcount):
-	logger.info('Begin spanning tree search')
+    logger.info('Begin spanning tree search')
 
-	# int * with length=cg_edgecount
-	# with each value initially set to 1
-	weights = [1] * cg_edgecount
+    # int * with length=cg_edgecount
+    # with each value initially set to 1
+    weights = [1] * cg_edgecount
 
-	g = Graph(directed=false)
-	g.addVertex(cg_vertexcount)
+    g = Graph(directed=false)
+    g.addVertex(cg_vertexcount)
  
-	# edge_index 
-	indexMap =  g.new_edge_property('int')
-	weightMap = g.new_edge_property('int')
+    # edge_index 
+    indexMap =  g.new_edge_property('int')
+    weightMap = g.new_edge_property('int')
 
-	j = 0
-	for edge in cgEdges:
-		e = g.addEdge(edge.c1,edge.c2)
-		weightMap[e] = weights[j]
-		indexMap[e] = j
-		j += 1
+    j = 0
+    for edge in cgEdges:
+        e = g.addEdge(edge.c1,edge.c2)
+	weightMap[e] = weights[j]
+	indexMap[e] = j
+	j += 1
  
-	index = g.new_edge_property('int')
+    index = g.new_edge_property('int')
  
-	# when called without the root argument this
-	# uses kruskal's algorithm
-	treeMap = min_spanning_tree(g)
- 
-	#for e in treeMap.edges():
-	# build uint ** for passing to cuda
+    # when called without the root argument this
+    # uses kruskal's algorithm
+    treeMap = min_spanning_tree(g)
+    #for e in treeMap.edges():
+    # build uint ** for passing to cuda
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
