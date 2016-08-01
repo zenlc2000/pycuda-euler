@@ -1,13 +1,16 @@
 import collections, sys
 import time
-from Bio import Seq, SeqIO, SeqRecord
+# from Bio import Seq, SeqIO, SeqRecord
+from fastareader.parse_fasta import *
 
 
 def twin(km):
-    return Seq.reverse_complement(km)
+    complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    # return Seq.reverse_complement(km)
+    return "".join(complement.get(base, base) for base in reversed(km))
 
 def kmers(seq,k):
-    for i in xrange(len(seq)-k+1):
+    for i in range(len(seq)-k+1):
         yield seq[i:i+k]
 
 def fw(km):
@@ -21,9 +24,11 @@ def bw(km):
 
 def build(fn,k=31,limit=1):
     d = collections.defaultdict(int)
+    buffer = Fasta(open(fn))
+    reads = [s.sequence for s in buffer]
 
 #    for f in fn:
-    reads = SeqIO.parse(fn,'fasta')
+#     reads = SeqIO.parse(fn,'fasta')
     for read in reads:
         seq_s = str(read.seq)
         seq_l = seq_s.split('N')
@@ -37,9 +42,9 @@ def build(fn,k=31,limit=1):
     d1 = [x for x in d if d[x] <= limit]
     for x in d1:
         del d[x]
-    for key, value in d.items():
-        print(key, value)
-#    return d
+    # for key, value in d.items():
+    #     print(key, value)
+    return d
 
 def contig_to_string(c):
     return c[0] + ''.join(x[-1] for x in c[1:])
@@ -131,6 +136,7 @@ def print_dbg(cs):
 
 
 # expects to be a fastaq file
+# @delayed
 def runAssembler(k,src):
     kval = int(k)
     d = build(src,k=kval)
