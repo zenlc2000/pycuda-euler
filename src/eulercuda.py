@@ -11,6 +11,7 @@ import logging
 import logging.config
 from fastareader.parse_fasta import Fasta
 import pycuda.driver
+import graph_tool
 
 pycuda.driver.set_debugging(True)
 
@@ -317,15 +318,15 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     j = 0
     for edge in cgEdges:
         e = g.addEdge(edge.c1,edge.c2)
-	weightMap[e] = weights[j]
-	indexMap[e] = j
-	j += 1
+        weightMap[e] = weights[j]
+        indexMap[e] = j
+        j += 1
  
     index = g.new_edge_property('int')
  
     # when called without the root argument this
     # uses kruskal's algorithm
-    treeMap = min_spanning_tree(g)
+    treeMap = graph_tool.topology.min_spanning_tree(g)
     #for e in treeMap.edges():
     # build uint ** for passing to cuda
 
