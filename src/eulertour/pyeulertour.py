@@ -82,8 +82,6 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
     logger.info("Finished. Leaving.")
 
 
-
-
 def construct_successor_graphP1_device(d_ee, d_v, ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.construct_successor_graphP1_device')
     logger.info("started.")
@@ -346,6 +344,7 @@ def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecoun
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
+
 def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
                                circuitVertexSize, d_cg_edge, circuitGraphEdgeCount):
     """
@@ -440,6 +439,137 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
+
+def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
+    logger = logging.getLogger('eulercuda.pyeulertour.execute_swipe')
+    logger.info("started.")
+    mod = SourceModule("""
+    typedef struct EulerVertex
+    {
+        KEY_T	vid;
+        unsigned int  ep;
+        unsigned int  ecount;
+        unsigned int  lp;
+        unsigned int  lcount;
+    } EulerVertex;
+
+    typedef struct EulerEdge{
+        KEY_T eid;
+        unsigned int v1;
+        unsigned int v2;
+        unsigned int s;
+        unsigned int pad;
+    }EulerEdge;
+
+    __global__ void executeSwipe(EulerVertex * ev,unsigned int * e, unsigned int vcount , EulerEdge * ee, unsigned int * mark,unsigned int ecount)
+    {
+
+        unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
+        unsigned int t;
+        unsigned int index=0;
+        unsigned int maxIndex;
+        unsigned int s;
+        if( tid< vcount)
+      {
+            index=ev[tid].ep;
+            maxIndex=index+ev[tid].ecount-1;
+            while( index<maxIndex)
+        {
+
+                if(mark[ee[e[index]].eid]==1)
+          {
+                    t=index;
+                    s=ee[e[index]].s;
+                    while(mark[ee[e[index]].eid]==1 && index < maxIndex)
+            {
+                        ee[e[index]].s=ee[e[index+1]].s;
+                        index=index+1;
+                    }
+                    if(t!=index)
+            {
+                        ee[e[index]].s=s;
+                    }
+                }
+                index++;
+            }
+
+        }
+    }
+    """)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 512)
+    swipe = mod.get_function('executeSwipe')
+    swipe(
+        d_ev,
+        d_e,
+        vcount,
+        d_ee,
+        d_mark,
+        ecount,
+        block_dim,
+        grid_dim
+    )
+
+
+
+def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tree, treeCount):
+    logger = logging.getLogger('eulercuda.pyeulertour.mark_spanning_euler_edges')
+    logger.info("started.")
+    mod = SourceModule("""
+    typedef struct EulerVertex{
+        KEY_T	vid;
+        unsigned int  ep;
+        unsigned int  ecount;
+        unsigned int  lp;
+        unsigned int  lcount;
+    }EulerVertex;
+    typedef struct CircuitEdge{
+        unsigned int ceid;
+        unsigned e1;
+        unsigned e2;
+        unsigned c1;
+        unsigned c2;
+    }CircuitEdge;
+
+    __global__ void  markSpanningEulerEdges(EulerEdge * ee, unsigned int * mark , unsigned int ecount,CircuitEdge * cg_edge,unsigned int cg_edgeCount,unsigned int * tree, unsigned int treeCount){
+
+        unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
+        if(tid < treeCount) {
+            /*if(tree[tid]==1)*/{
+                atomicExch(mark+min(cg_edge[tree[tid]].e1,cg_edge[tree[tid]].e2),1); // important: assumption if(mark[i]=1) means mark[i]and mark[i+1] are swipe
+                //atomicExch(mark+cg_edge[tree[tid]].e2,1);
+
+            }
+        }
+    }
+    """)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(treeCount, 512)
+    mark = mod.get_function('markSpanningEulerEdges')
+    mark(
+        d_ee,
+        d_mark,
+        ecount,
+        d_cg_edge,
+        cg_edgeCount,
+        d_tree,
+        treeCount,
+        block_dim,
+        grid_dim
+    )
+
+
+def identify_contig_start(d_ee,d_contigStart,ecount):
+    pass
+
+
+def markContigStart(d_ee, d_contigStart, ecount):
+    pass
+
+
+def executeSwipeDevice(d_ev, d_entEdge, vertexCount, d_ee, edgeCount, d_cg_edge, cg_edgecount, d_tree, treeSize):
+    logger = logging.getLogger('eulercuda.pyeulertour.executeSwipeDevice')
+    logger.info("started.")
+
+
 
 
 def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vextexCount, kmerLength):
