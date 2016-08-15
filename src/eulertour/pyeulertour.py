@@ -499,16 +499,15 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
     block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 512)
     swipe = mod.get_function('executeSwipe')
     swipe(
-        d_ev,
-        d_e,
-        vcount,
-        d_ee,
-        d_mark,
-        ecount,
-        block_dim,
-        grid_dim
+        drv.In(d_ev),
+        drv.In(d_e),
+        np.uintc(vcount),
+        drv.Out(d_ee),      # may have to do this one the "long way"
+        np.uintc(d_mark),
+        np.uintc(ecount),
+        block = block_dim,
+        grid = grid_dim
     )
-
 
 
 def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tree, treeCount):
@@ -557,8 +556,38 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
     )
 
 
-def identify_contig_start(d_ee,d_contigStart,ecount):
-    pass
+def identify_contig_start(d_ee, d_contigStart, ecount):
+    logger = logging.getLogger('eulercuda.pyeulertour.identify_contig_start')
+    logger.info("started.")
+    mod = SourceModule("""
+    typedef struct EulerEdge{
+        KEY_T eid;
+        unsigned int v1;
+        unsigned int v2;
+        unsigned int s;
+        unsigned int pad;
+    }EulerEdge;
+
+    __global__  void identifyContigStart( EulerEdge * e ,unsigned char * contigStart,unsigned int ecount){
+        unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
+        if(tid<ecount){
+            if(e[tid].s < ecount){
+                contigStart[e[tid].s]=0;
+                //atomicExch(contigStart+e[tid].s,0);
+            }
+        }
+    }
+
+    """)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
+    c_start = mod.get_function('identifyContigStart')
+    c_start(
+        d_ee,
+        d_contigStart,
+        ecount,
+        block_dim,
+        grid_dim
+    )
 
 
 def markContigStart(d_ee, d_contigStart, ecount):
