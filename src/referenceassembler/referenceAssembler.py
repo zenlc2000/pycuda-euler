@@ -1,7 +1,7 @@
 import collections, sys
 import time
 # from Bio import Seq, SeqIO, SeqRecord
-from fastareader.parse_fasta import *
+from fastareader.parse_fasta import Fasta
 
 
 def twin(km):
