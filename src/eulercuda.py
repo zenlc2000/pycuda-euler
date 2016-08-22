@@ -316,7 +316,7 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     weightMap = g.new_edge_property('int')
 
     j = 0
-    for edge in cgEdges:
+    for edge in cg_edge:
         e = g.addEdge(edge.c1,edge.c2)
         weightMap[e] = weights[j]
         indexMap[e] = j
@@ -325,10 +325,12 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     index = g.new_edge_property('int')
  
     # when called without the root argument this
-    # uses kruskal's algorithm
+    # uses kruskal's algorithmd
     treeMap = graph_tool.topology.min_spanning_tree(g)
     #for e in treeMap.edges():
     # build uint ** for passing to cuda
+    tree=index.get_2d_array();
+    return len(tree)
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
@@ -353,7 +355,7 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
         cg_edgeCount, cg_vertexCount, kmerLength)
     if cg_edgeCount > 0:
-        treeSize = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree)
+        treeSize = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,tree)
 
     def read_fasta(infilename):
     sequence = []

@@ -30,8 +30,8 @@ def build(fn,k=31,limit=1):
 #    for f in fn:
 #     reads = SeqIO.parse(fn,'fasta')
     for read in reads:
-        seq_s = str(read.seq)
-        seq_l = seq_s.split('N')
+        #seq_s = str(read.seq)
+        seq_l = read.split('N')
         for seq in seq_l:
             for km in kmers(seq,k):
                 d[km] +=1
