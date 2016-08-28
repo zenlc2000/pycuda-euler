@@ -11,7 +11,7 @@ import logging
 import logging.config
 from fastareader.parse_fasta import Fasta
 import pycuda.driver
-import graph_tool
+from graph_tool.all import *
 
 pycuda.driver.set_debugging(True)
 
@@ -88,7 +88,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
 
     for _ in range(0, (lmerLength - 1) * 2):
         kmerBitMask = (kmerBitMask << 1) | 1
-    logger.debug("kmerBitMask = %s" % (kmerBitMask))
+    logger.debug("kmerBitMask = %s" % kmerBitMask)
 
     readProcessed = 0
     # Originally a loop slicing readBuffer into chunks then process each chunk
@@ -123,14 +123,14 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
         if h_lmersF[index] == 0:
             lmerEmpty += 1
         else:
-            if lmerMap.get(h_lmersF[index]) == None:
+            if lmerMap.get(h_lmersF[index]) is None:
                 lmerMap[h_lmersF[index]] = 1
             else:
                 lmerMap[h_lmersF[index]] += 1
         if h_lmersR[index] == 0:
             lmerEmpty += 1
         else:
-            if lmerMap.get(h_lmersR[index]) == None:
+            if lmerMap.get(h_lmersR[index]) is None:
                 lmerMap[h_lmersR[index]] = 1
             else:
                 lmerMap[h_lmersR[index]] += 1
@@ -144,7 +144,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
 
     kmerCount = len(kmerMap) + kmerEmpty
     # TODO: Log message with kmer count
-    logger.info('kmer count = %d' % (kmerCount))
+    logger.info('kmer count = %d' % kmerCount)
 
     # kmerKeys = []
     # kmerValues = []
@@ -203,6 +203,9 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     unsigned int * d_entEdge=NULL;
 
     """
+    logger = logging.getLogger('eulercuda.constructDebruijnGraph')
+    logger.info('Begin constructing deBruijn graph')
+
     h_lmerKeys = []
     h_lmerValues = []
 
@@ -238,7 +241,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     # setStatItem(NM_KMER_COUNT, kmerCount);
 
 
-    logger.info('lmerCount = %d' % (lmerCount))
+    logger.info('lmerCount = %d' % lmerCount)
     logger.info('projected kmer count: %s, actual: %s' % ((readCount * (readLength - lmerLength)), kmerCount))
     # TODO: return d_TK,  d_TV, tableLength,  d_bucketSize,  bucketCount)
     # TODO: Test pygpuhash
@@ -294,7 +297,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
 # unsigned int partialContigTimer = 0;
 
 
-def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
+def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount):
     """
     :param cg_edge:
     :param cg_edgecount:
@@ -302,13 +305,14 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     :param tree:
     :return:
     """
+    logger = logging.getLogger('eulercuda.findSpanningTree')
     logger.info('Begin spanning tree search')
 
     # int * with length=cg_edgecount
     # with each value initially set to 1
     weights = [1] * cg_edgecount
 
-    g = Graph(directed=false)
+    g = Graph(directed=False)
     g.addVertex(cg_vertexcount)
  
     # edge_index 
@@ -329,8 +333,8 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,  tree):
     treeMap = graph_tool.topology.min_spanning_tree(g)
     #for e in treeMap.edges():
     # build uint ** for passing to cuda
-    tree=index.get_2d_array();
-    return len(tree)
+    tree = index.get_2d_array()
+    return len(tree), tree
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
@@ -355,9 +359,9 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
         cg_edgeCount, cg_vertexCount, kmerLength)
     if cg_edgeCount > 0:
-        treeSize = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,tree)
+        treeSize, tree = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount)
 
-    def read_fasta(infilename):
+def read_fasta(infilename):
     sequence = []
     with open(infilename, 'r') as infile:
         for line in infile:
@@ -430,9 +434,8 @@ if __name__ == '__main__':
     parser.add_argument('-i', action='store', dest='input_filename', help='Input Fie Name')
     parser.add_argument('-o', action='store', dest='output_filename', help='Output File Name')
     parser.add_argument('-k', action='store', dest='k', type=int, help='kmer size')
-    # parser.add_argument('-d', action='store_true', default=False, help='Use DDFS')
     results = parser.parse_args()
-    # Need to process commandline args. Probably just copy=paste from disco3
+
     if results.input_filename == '':
         fname = '../data/Ecoli_raw.fasta'
     else:
