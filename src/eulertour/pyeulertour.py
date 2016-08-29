@@ -65,22 +65,25 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
     logger.info(" %s free out of %s total memory" % (free, total) )
     block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 256)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_d_ev = gpuarray.to_gpu(d_ev)
+    np_d_ee = gpuarray.to_gpu(d_ee)
     assign_successor = mod.get_function("assignSuccessor")
     assign_successor(             # ecount is list - should be uint
-        drv.InOut(d_ev),
+        np_d_ev,
         drv.In(d_l),
         drv.In(d_e),
         np.uintc(vcount),
-        drv.InOut(d_ee),
+        np_d_ee,
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
-
+    np_d_ev.get(d_ev)
+    np_d_ee.get(d_ee)
     logger.info("Finished. Leaving.")
-
+    return d_ev, d_ee
 
 def construct_successor_graphP1_device(d_ee, d_v, ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.construct_successor_graphP1_device')
@@ -122,17 +125,19 @@ def construct_successor_graphP1_device(d_ee, d_v, ecount):
 
     construct_successor_graphP1 = mod.get_function("constructSuccessorGraphP1")
     block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
+    np_d_v = gpuarray.to_gpu(d_v)
     construct_successor_graphP1(
         drv.In(d_ee),
-        drv.Out(d_v),
+        np_d_v,
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
-
+    np_d_v.get(d_v)
     logger.info("Finished. Leaving.")
+    return d_v
 
 
 def construct_successor_graphP2_device(d_ee, d_v, ecount):
@@ -175,16 +180,19 @@ def construct_successor_graphP2_device(d_ee, d_v, ecount):
     construct_successor_graphP2 = mod.get_function("constructSuccessorGraphP2")
     block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_d_v = gpuarray.to_gpu(d_v)
     construct_successor_graphP2(
         drv.In(d_ee),
-        drv.Out(d_v),
+        np_d_v,
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    np_d_v.get(d_v)
     logger.info("Finished. Leaving.")
+    return d_v
 
 
 def calculate_circuit_graph_vertex_data_device(d_D, d_C, length):
@@ -619,13 +627,13 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
 
     # Step 1:
     # Assign successors
-    assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount)
+    d_ev, d_ee = assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount)
 
     d_v = np.zeros(ecount * (3 * sys.getsizeof(np.uintc)), dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
 
-    construct_successor_graphP1_device(d_ee, d_v, ecount)
+    d_v = construct_successor_graphP1_device(d_ee, d_v, ecount)
 
-    construct_successor_graphP2_device(d_ee, d_v, ecount)
+    d_v = construct_successor_graphP2_device(d_ee, d_v, ecount)
 
     d_D = np.zeros(ecount * sys.getsizeof(np.uintc), dtype=np.uintc)
     find_component_device(d_v, d_D, ecount)
@@ -677,6 +685,6 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
 
         # h_cg_edge = np.zeros_ like(d_cg_edge)
         d_cg_edge.sort(order=['c1', 'c2'])
-
+    return d_cg_edge, cg_edgeCount, cg_vertexCount
 
 

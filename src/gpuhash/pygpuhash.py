@@ -152,9 +152,9 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         grid = grid_dim,
         block = block_dim
     )
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info('Finished. Leaving.')
     # d_start  = start_gpu.get()

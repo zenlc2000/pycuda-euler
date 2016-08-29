@@ -59,6 +59,7 @@ def component_step_init(d_v, d_D, d_Q, length):
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_D, d_Q
 
 def component_step1_shortcutting_p1(d_v, d_prevD, d_D, d_Q, length, s):
     """
@@ -668,7 +669,7 @@ def find_component_device(d_v, d_D,  length):
 
     s = np.uintc
 
-    component_step_init(d_v, d_D, d_Q, length)
+    d_D, d_Q = component_step_init(d_v, d_D, d_Q, length)
     s, sp = 1, 1
 
     sptemp = drv.pagelocked_zeros(sys.getsizeof(np.intc), dtype=np.intc, mem_flags=drv.host_alloc_flags.DEVICEMAP)

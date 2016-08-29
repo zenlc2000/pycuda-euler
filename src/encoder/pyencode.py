@@ -66,12 +66,12 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
 
         __syncthreads();
     }
-    """, options=['--compiler-options', '-Wall'])
+    """)
 
     encode_lmer = mod.get_function("encodeLmerDevice")
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-    logger.info("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
+    logger.debug("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
 
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         logger.info("Going to GPU.")
@@ -83,7 +83,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                     shared=readLength + 31)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
-    logger.info("Generated %s lmers." % (len(d_lmers)))
+    logger.debug("Generated %s lmers." % (len(d_lmers)))
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))

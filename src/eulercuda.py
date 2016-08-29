@@ -355,11 +355,11 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
     cg_edgeCount = 0 # np.uintc
     cg_vertexCount = 0 # np.uintc
 
-    et.findEulerDevice(
+    cg_edge, cg_edgeCount, cg_vertexCount = et.findEulerDevice(
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
         cg_edgeCount, cg_vertexCount, kmerLength)
     if cg_edgeCount > 0:
-        treeSize, tree = findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount)
+        treeSize, tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
 
 def read_fasta(infilename):
     sequence = []
@@ -387,7 +387,7 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     # unsigned int  	edgeCount=0;
     # unsigned int 	vertexCount=0;
     # unsigned int 	readCount=0;
-    logger.info('Openinp %s' % (infile))
+    logger.info('Opening %s' % infile)
 
     extension = infile.split('.')[-1]
     # buffer = Fasta(open(infile))
@@ -434,6 +434,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', action='store', dest='input_filename', help='Input Fie Name')
     parser.add_argument('-o', action='store', dest='output_filename', help='Output File Name')
     parser.add_argument('-k', action='store', dest='k', type=int, help='kmer size')
+    parser.add_argument('-d', action='store_true', dest='debug', default=False)
     results = parser.parse_args()
 
     if results.input_filename == '':
