@@ -118,6 +118,7 @@ def component_step1_shortcutting_p1(d_v, d_prevD, d_D, d_Q, length, s):
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_D
 
 
 def component_step1_shortcutting_p2(d_v, d_prevD, d_D, d_Q, length, s):
@@ -179,6 +180,7 @@ def component_step1_shortcutting_p2(d_v, d_prevD, d_D, d_Q, length, s):
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_Q
 
 def component_Step2_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s):
     """
@@ -267,6 +269,7 @@ def component_Step2_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_t1, d_t2, d_val1, d_val2
 
 
 def component_Step2_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s):
@@ -358,6 +361,7 @@ def component_Step2_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_D, d_Q
 
 
 def component_Step3_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s):
@@ -438,6 +442,7 @@ def component_Step3_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_t1, d_t2, d_val1, d_val2
 
 
 def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s):
@@ -488,6 +493,7 @@ def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     """)
     block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_d_D = gpuarray.to_gpu(d_D)
     np_d_t1 = gpuarray.to_gpu(d_t1)
     np_d_t2 = gpuarray.to_gpu(d_t2)
     np_d_val1 = gpuarray.to_gpu(d_val1)
@@ -496,7 +502,7 @@ def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     step3_P2(
         drv.In(d_v),
         drv.In(d_prevD),
-        drv.In(d_D),
+        np_d_D,
         drv.In(d_Q),
         np_d_t1,
         np_d_val1,
@@ -506,6 +512,7 @@ def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
         np.uintc(s),
         block=block_dim, grid=grid_dim
     )
+    np_d_D.get(d_D)
     np_d_t1.get(d_t1)
     np_d_t2.get(d_t2)
     np_d_val1.get(d_val1)
@@ -515,6 +522,7 @@ def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_D
 
 def component_step4_P1(d_v, d_D, d_val1, length):
     """
@@ -560,6 +568,7 @@ def component_step4_P1(d_v, d_D, d_val1, length):
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_val1
 
 
 def component_step4_P2(d_v, d_D, d_val1, length):
@@ -592,20 +601,23 @@ def component_step4_P2(d_v, d_D, d_val1, length):
     block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_val1 = gpuarray.to_gpu(d_val1)
+    np_d_D = gpuarray.to_gpu(d_D)
     step4_P2 = mod.get_function('componentStepFourP2')
     step4_P2(
         drv.In(d_v),
-        drv.In(d_D),
+        np_d_D,
         np_d_val1,
         np.uintc(length),
         block=block_dim, grid=grid_dim
     )
+    np_d_D.get(d_D)
     np_d_val1.get(d_val1)
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_D
 
 
 def component_step5(d_Q,length,d_sptemp,s):
@@ -633,19 +645,22 @@ def component_step5(d_Q,length,d_sptemp,s):
     """)
     block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_d_sptemp = gpuarray.to_gpu(d_sptemp)
     step5 = mod.get_function('componentStepFive')
     step5(
         drv.In(d_Q),
         np.uintc(length),
-        d_sptemp,
+        np_d_sptemp,
         np.uintc(s),
         block=block_dim, grid=grid_dim
     )
+    np_d_sptemp.get(d_sptemp)
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
+    return d_sptemp
 
 
 def find_component_device(d_v, d_D,  length):
@@ -678,30 +693,31 @@ def find_component_device(d_v, d_D,  length):
     while s == sp:
         d_D, d_prevD = d_prevD, d_D
 
-        component_step1_shortcutting_p1(d_v, d_prevD, d_D, d_Q, length, s)
+        d_D = component_step1_shortcutting_p1(d_v, d_prevD, d_D, d_Q, length, s)
 
-        component_step1_shortcutting_p2(d_v, d_prevD, d_D, d_Q, length, s)
+        d_Q = component_step1_shortcutting_p2(d_v, d_prevD, d_D, d_Q, length, s)
 
-        component_Step2_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
+        d_t1, d_t2, d_val1, d_val2 = component_Step2_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
 
-        component_Step2_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
+        d_D, d_Q = component_Step2_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
 
-        component_Step3_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
+        d_t1, d_t2, d_val1, d_val2 = component_Step3_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
 
-        component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
+        d_D = component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, length, s)
 
-        component_step4_P1(d_v, d_D, d_val1, length)
+        d_val1 = component_step4_P1(d_v, d_D, d_val1, length)
 
-        component_step4_P2(d_v, d_D, d_val1, length)
+        d_D = component_step4_P2(d_v, d_D, d_val1, length)
 
         sptemp[0] = 0
 
-        component_step5(d_Q, length, d_sptemp, s)
+        d_sptemp = (d_Q, length, d_sptemp, s)
 
         sp += sptemp[0]
 
         s += 1
 
     logger.info("Finished. Leaving.")
+    return d_D
 
 

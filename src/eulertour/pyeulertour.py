@@ -280,6 +280,7 @@ def construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv):
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    return d_cv
 
 
 def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cedgeCount ):
@@ -351,6 +352,7 @@ def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecoun
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    return d_cedgeCount
 
 
 def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
@@ -447,6 +449,7 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    return d_cg_edge
 
 def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.execute_swipe')
@@ -636,10 +639,10 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
     d_v = construct_successor_graphP2_device(d_ee, d_v, ecount)
 
     d_D = np.zeros(ecount * sys.getsizeof(np.uintc), dtype=np.uintc)
-    find_component_device(d_v, d_D, ecount)
+    d_D = find_component_device(d_v, d_D, ecount)
     d_C = np.zeros_like(d_D)
     # 	calculateCircuitGraphVertexData<<<grid,block>>>( d_D,d_C,ecount);
-    calculate_circuit_graph_vertex_data_device(d_D, d_C, ecount)
+    d_D, d_C = calculate_circuit_graph_vertex_data_device(d_D, d_C, ecount)
 # 	//step 4.b offset calculation .find prefix sum
 # 	cudppScan(scanplan, d_cg_offset, d_C, ecount);
     d_cg_offset = np.zeros_like(d_C)
@@ -662,11 +665,11 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
     # allocateMemory((void **) & d_cv, circuitVertexSize * sizeof(unsigned int));
     data_size = circuitVertexSize * sys.getsizeof(np.uintc)
     d_cv = np.zeros(data_size, dtype=np.uintc)
-    construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv)
+    d_cv = construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv)
 
     d_cedgeCount = np.zeros_like(d_cv) # same C size allocated and type
     if circuitVertexSize > 1:
-        calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cedgeCount)
+        d_cedgeCount = calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cedgeCount)
 
         d_cg_edge_start = np.zeros_like(d_cv)
         np_d_cedgeCount = gpuarray.to_gpu(d_cedgeCount)
@@ -680,11 +683,11 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
         edge_size = 5 * sys.getsizeof(np.uintc)
         d_cg_edge = np.zeros(edge_size, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
 
-        assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
+        d_cg_edge = assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
                                    circuitVertexSize, d_cg_edge,circuitGraphEdgeCount)
 
         # h_cg_edge = np.zeros_ like(d_cg_edge)
         d_cg_edge.sort(order=['c1', 'c2'])
-    return d_cg_edge, cg_edgeCount, cg_vertexCount
+    return d_cg_edge, circuitGraphEdgeCount, circuitVertexSize
 
 

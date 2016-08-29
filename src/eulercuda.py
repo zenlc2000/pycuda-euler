@@ -350,7 +350,8 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
     :param outfile:
     :return:
     """
-
+    logger = logging.getLogger("eulercuda.findEulerTour")
+    logger.info("Started")
     d_cg_edge = {} # CircuitEdge struct
     cg_edgeCount = 0 # np.uintc
     cg_vertexCount = 0 # np.uintc
@@ -360,6 +361,7 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
         cg_edgeCount, cg_vertexCount, kmerLength)
     if cg_edgeCount > 0:
         treeSize, tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
+    logger.info("finished")
 
 def read_fasta(infilename):
     sequence = []
