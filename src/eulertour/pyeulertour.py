@@ -632,13 +632,13 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
     # Assign successors
     d_ev, d_ee = assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount)
 
-    d_v = np.zeros(ecount * (3 * sys.getsizeof(np.uintc)), dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
+    d_v = np.zeros(ecount, dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
 
     d_v = construct_successor_graphP1_device(d_ee, d_v, ecount)
 
     d_v = construct_successor_graphP2_device(d_ee, d_v, ecount)
 
-    d_D = np.zeros(ecount * sys.getsizeof(np.uintc), dtype=np.uintc)
+    d_D = np.zeros(ecount, dtype=np.uintc)
     d_D = find_component_device(d_v, d_D, ecount)
     d_C = np.zeros_like(d_D)
     # 	calculateCircuitGraphVertexData<<<grid,block>>>( d_D,d_C,ecount);
@@ -663,7 +663,7 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
     cg_vertexCount = circuitVertexSize
 
     # allocateMemory((void **) & d_cv, circuitVertexSize * sizeof(unsigned int));
-    data_size = circuitVertexSize * sys.getsizeof(np.uintc)
+    data_size = circuitVertexSize #* sys.getsizeof(np.uintc)
     d_cv = np.zeros(data_size, dtype=np.uintc)
     d_cv = construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv)
 
