@@ -440,7 +440,7 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
         np.uintc(ecount),
         drv.In(d_cg_edge_start),
         drv.In(d_cedgeCount),
-        drv.In(circuitVertexSize),
+        np.uintc(circuitVertexSize),
         np_d_cg_edge,
         np.uintc(circuitGraphEdgeCount),
         block=block_dim, grid=grid_dim
@@ -612,7 +612,7 @@ def executeSwipeDevice(d_ev, d_entEdge, vertexCount, d_ee, edgeCount, d_cg_edge,
 
 
 
-def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vextexCount, kmerLength):
+def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vertexCount, kmerLength):
     """
 
     :param d_ev:
@@ -676,18 +676,19 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
         knl(np_d_cedgeCount)
         np_d_cedgeCount.get(d_cg_edge_start)
 
-        buffer.append(d_cg_edge_start[circuitVertexSize - 1])
-        buffer.append(d_cedgeCount[circuitVertexSize - 1])
+        buffer[0] = d_cg_edge_start[len(d_cg_edge_start) -1]   #[circuitVertexSize - 1]
+        buffer[1] = d_cedgeCount[len(d_cedgeCount) - 1]   #[circuitVertexSize - 1]
         circuitGraphEdgeCount = buffer[0] + buffer[1]
 
         edge_size = 5 * sys.getsizeof(np.uintc)
-        d_cg_edge = np.zeros(edge_size, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+        # d_cg_edge = np.zeros(edge_size, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+        d_cg_edge = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
 
         d_cg_edge = assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
                                    circuitVertexSize, d_cg_edge,circuitGraphEdgeCount)
 
         # h_cg_edge = np.zeros_ like(d_cg_edge)
         d_cg_edge.sort(order=['c1', 'c2'])
-    return d_cg_edge, circuitGraphEdgeCount, circuitVertexSize
+    return d_cg_edge, circuitGraphEdgeCount, cg_vertexCount
 
 
