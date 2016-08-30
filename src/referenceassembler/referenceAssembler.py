@@ -2,7 +2,7 @@ import collections, sys
 import time
 # from Bio import Seq, SeqIO, SeqRecord
 from fastareader.parse_fasta import Fasta
-
+from dask import delayed
 
 def twin(km):
     complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
@@ -136,7 +136,7 @@ def print_dbg(cs):
 
 
 # expects to be a fastaq file
-# @delayed
+#@delayed
 def runAssembler(k,src):
     kval = int(k)
     d = build(src,k=kval)

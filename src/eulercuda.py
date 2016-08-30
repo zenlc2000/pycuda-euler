@@ -297,7 +297,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
 # unsigned int partialContigTimer = 0;
 
 
-def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount):
+def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,):
     """
     :param cg_edge:
     :param cg_edgecount:
@@ -329,12 +329,16 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount):
     index = g.new_edge_property('int')
  
     # when called without the root argument this
-    # uses kruskal's algorithmd
+    # uses kruskal's algorithm
     treeMap = graph_tool.topology.min_spanning_tree(g)
-    #for e in treeMap.edges():
-    # build uint ** for passing to cuda
-    tree = index.get_2d_array()
-    return len(tree), tree
+  
+    # build uint ** for passing to cuda  
+    tree = np.zeros((cg_edgecount,2),dtype=np.uintc)
+
+    for i,e in enumerate(treeMap):
+        tree[i] = np.asarray(e)
+     
+    return tree
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
@@ -360,7 +364,7 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
         cg_edgeCount, cg_vertexCount, kmerLength)
     if cg_edgeCount > 0:
-        treeSize, tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
+        tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
     logger.info("finished")
 
 def read_fasta(infilename):
