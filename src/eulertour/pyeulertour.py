@@ -682,7 +682,8 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
 
         edge_size = 5 * sys.getsizeof(np.uintc)
         # d_cg_edge = np.zeros(edge_size, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
-        d_cg_edge = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+        # d_cg_edge = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+        d_cg_edge = np.zeros(circuitGraphEdgeCount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
 
         d_cg_edge = assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cg_edge_start, d_cedgeCount,
                                    circuitVertexSize, d_cg_edge,circuitGraphEdgeCount)
