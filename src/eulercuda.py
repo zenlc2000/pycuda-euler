@@ -313,7 +313,7 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount):
     weights = [1] * cg_edgecount
 
     g = Graph(directed=False)
-    g.addVertex(cg_vertexcount)
+    g.add_vertex(cg_vertexcount)
  
     # edge_index 
     indexMap =  g.new_edge_property('int')
@@ -321,7 +321,7 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount):
 
     j = 0
     for edge in cg_edge:
-        e = g.addEdge(edge.c1,edge.c2)
+        e = g.add_edge(edge['c1'], edge['c2'])
         weightMap[e] = weights[j]
         indexMap[e] = j
         j += 1
