@@ -448,13 +448,14 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
     np_d_cg_edge.get(d_cg_edge)
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
     return d_cg_edge
 
 def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.execute_swipe')
     logger.info("started.")
     mod = SourceModule("""
+    typedef unsigned long long  KEY_T ;
     typedef struct EulerVertex
     {
         KEY_T	vid;
@@ -464,7 +465,8 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
         unsigned int  lcount;
     } EulerVertex;
 
-    typedef struct EulerEdge{
+    typedef struct EulerEdge
+    {
         KEY_T eid;
         unsigned int v1;
         unsigned int v2;
@@ -481,23 +483,23 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
         unsigned int maxIndex;
         unsigned int s;
         if( tid< vcount)
-      {
+        {
             index=ev[tid].ep;
             maxIndex=index+ev[tid].ecount-1;
             while( index<maxIndex)
-        {
+            {
 
                 if(mark[ee[e[index]].eid]==1)
-          {
+                {
                     t=index;
                     s=ee[e[index]].s;
                     while(mark[ee[e[index]].eid]==1 && index < maxIndex)
-            {
+                    {
                         ee[e[index]].s=ee[e[index+1]].s;
                         index=index+1;
                     }
                     if(t!=index)
-            {
+                    {
                         ee[e[index]].s=s;
                     }
                 }
@@ -508,23 +510,32 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
     }
     """)
     block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 512)
+    np_d_mark = gpuarray.to_gpu(d_mark)
+    np_d_ee = gpuarray.to_gpu(d_ee)
     swipe = mod.get_function('executeSwipe')
     swipe(
         drv.In(d_ev),
         drv.In(d_e),
         np.uintc(vcount),
-        drv.Out(d_ee),      # may have to do this one the "long way"
-        np.uintc(d_mark),
+        np_d_ee,      # may have to do this one the "long way"
+        np_d_mark,
         np.uintc(ecount),
         block = block_dim,
         grid = grid_dim
     )
+    np_d_ee.get(d_ee)
+    np_d_mark.get(d_mark)
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    return d_ee, d_mark
 
 
 def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tree, treeCount):
-    logger = logging.getLogger('eulercuda.pyeulertour.mark_spanning_euler_edges')
+    logger = logging.getLogger(__name__)
     logger.info("started.")
     mod = SourceModule("""
+    typedef unsigned long long  KEY_T ;
     typedef struct EulerVertex{
         KEY_T	vid;
         unsigned int  ep;
@@ -539,11 +550,19 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
         unsigned c1;
         unsigned c2;
     }CircuitEdge;
+    typedef struct EulerEdge{
+        KEY_T eid;
+        unsigned int v1;
+        unsigned int v2;
+        unsigned int s;
+        unsigned int pad;
+    }EulerEdge;
 
     __global__ void  markSpanningEulerEdges(EulerEdge * ee, unsigned int * mark , unsigned int ecount,CircuitEdge * cg_edge,unsigned int cg_edgeCount,unsigned int * tree, unsigned int treeCount){
 
         unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
-        if(tid < treeCount) {
+        if(tid < treeCount)
+        {
             /*if(tree[tid]==1)*/{
                 atomicExch(mark+min(cg_edge[tree[tid]].e1,cg_edge[tree[tid]].e2),1); // important: assumption if(mark[i]=1) means mark[i]and mark[i+1] are swipe
                 //atomicExch(mark+cg_edge[tree[tid]].e2,1);
@@ -554,23 +573,41 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
     """)
     block_dim, grid_dim = getOptimalLaunchConfiguration(treeCount, 512)
     mark = mod.get_function('markSpanningEulerEdges')
+    np_d_mark = gpuarray.to_gpu(d_mark)
     mark(
-        d_ee,
-        d_mark,
-        ecount,
-        d_cg_edge,
-        cg_edgeCount,
-        d_tree,
-        treeCount,
-        block_dim,
-        grid_dim
+        drv.In(d_ee),
+        np_d_mark,
+        np.uintc(ecount),
+        drv.In(d_cg_edge),
+        np.uintc(cg_edgeCount),
+        drv.In(d_tree),
+        np.uintc(treeCount),
+        block = block_dim,
+        grid = grid_dim
     )
+    np_d_mark.get(d_mark)
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    return d_mark
+
+
+def executeSwipeDevice(d_ev, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, d_tree, treeCount):
+    logger = logging.getLogger(__name__)
+    logger.info("started.")
+    d_mark = np.ones(ecount, dtype=np.uintc)
+    # block_dim, grid_dim = getOptimalLaunchConfiguration(treeCount, 512)
+    d_mark = mark_spanning_euler_edges(d_ee, d_mark, ecount, d_cg_edge, cg_edgeCount, d_tree, treeCount)
+    d_ee, d_mark = execute_swipe(d_ev, d_e, vcount, d_ee, d_mark, ecount)
+    logger.info('Finished')
+    return d_ee
 
 
 def identify_contig_start(d_ee, d_contigStart, ecount):
-    logger = logging.getLogger('eulercuda.pyeulertour.identify_contig_start')
+    logger = logging.getLogger(__name__)
     logger.info("started.")
     mod = SourceModule("""
+    typedef unsigned long long  KEY_T ;
     typedef struct EulerEdge{
         KEY_T eid;
         unsigned int v1;
@@ -591,24 +628,24 @@ def identify_contig_start(d_ee, d_contigStart, ecount):
 
     """)
     block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
+    np_d_contigStart = gpuarray.to_gpu(d_contigStart)
     c_start = mod.get_function('identifyContigStart')
     c_start(
-        d_ee,
-        d_contigStart,
-        ecount,
-        block_dim,
-        grid_dim
+        drv.In(d_ee),
+        np_d_contigStart,
+        np.uintc(ecount),
+        block=block_dim,
+        grid=grid_dim
     )
+    np_d_contigStart.get(d_contigStart)
+    devdata = pycuda.tools.DeviceData()
+    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    return d_contigStart
 
 
 def markContigStart(d_ee, d_contigStart, ecount):
     pass
-
-
-def executeSwipeDevice(d_ev, d_entEdge, vertexCount, d_ee, edgeCount, d_cg_edge, cg_edgecount, d_tree, treeSize):
-    logger = logging.getLogger('eulercuda.pyeulertour.executeSwipeDevice')
-    logger.info("started.")
-
 
 
 

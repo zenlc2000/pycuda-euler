@@ -241,8 +241,8 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     # setStatItem(NM_KMER_COUNT, kmerCount);
 
 
-    logger.info('lmerCount = %d' % lmerCount)
-    logger.info('projected kmer count: %s, actual: %s' % ((readCount * (readLength - lmerLength)), kmerCount))
+    logger.debug('lmerCount = %d' % lmerCount)
+    logger.debug('projected kmer count: %s, actual: %s' % ((readCount * (readLength - lmerLength)), kmerCount))
     # TODO: return d_TK,  d_TV, tableLength,  d_bucketSize,  bucketCount)
     # TODO: Test pygpuhash
     # =======> pygpuhash.create_hash_table(d_kmerKeys, d_kmerValues, kmerCount)
@@ -340,6 +340,71 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,):
      
     return tree
 
+def translate(i):
+    bases = ['A', 'C', 'G', 'T']
+    if i < 4:
+        return bases[i]
+    else:
+        return '.'
+
+def getString(kmer, length, value):
+    currentValue = value
+    for i in range(1, length + 1):
+        kmer[length - i] = translate(currentValue % 4)
+        currentValue //= 4
+    return kmer
+
+
+def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
+    logger = logging.getLogger(__name__)
+    d_contigStart = np.ones(ecount, dtype='S')
+    d_contigStart = et.identify_contig_start(d_ee, d_contigStart, ecount)
+    h_contigStart = np.copy(d_contigStart)
+
+    h_ev = np.zeros(vcount, dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
+    h_ee = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+    buffer = np.zeros(l, dtype='S')
+    h_visited = np.zeros(ecount, dtype='S')
+    h_ev = np.copy(d_ev)
+    h_ee = np.copy(d_ee)
+
+    count = 0
+    edgeCount = 0
+    next = None
+
+    with open(outfile, 'w') as ofile:
+        for i in range(ecount):
+            if h_contigStart[i] != 0 and h_visited == 0:
+                ofile.write('>%u\n' % count)
+                logger.debug('>%u\n' % count)
+                count += 1
+                ee = h_ee[i]
+                index = ee['vid']
+                ev = h_ev[index]
+                buffer = getString(buffer, l -1, ev['vid'])
+                ofile.write(buffer)
+                logger.debug(buffer)
+                next = i
+                while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
+                    h_visited[next] = 1
+                    next = h_ee[next]['s']
+                    buffer = getString(buffer, l - 1, h_ev[h_ee[next]['s']]['vid'] )
+                    ofile.write('%s' % buffer + str(l - 2))
+                    logger.debug('%s' % buffer + str(l - 2))
+                    edgeCount += 1
+                if h_visited[next] == 0: # for circular paths
+                    buffer = getString(buffer, l - 1, h_ev[h_ee[next]['v2']]['vid'])
+                    ofile.write('%s' % buffer + str(l - 2))
+                    logger.debug('%s' % buffer + str(l - 2))
+                    h_visited[next] = 1
+                    edgeCount += 1
+                ofile.write('\n\n')
+
+
+
+
+
+
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
     """
@@ -363,8 +428,12 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
     cg_edge, cg_edgeCount, cg_vertexCount = et.findEulerDevice(
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
         cg_edgeCount, cg_vertexCount, kmerLength)
+    vertexCount, edgeCount = cg_vertexCount, cg_edgeCount
     if cg_edgeCount > 0:
         tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
+        d_ee = et.executeSwipeDevice(d_ev, d_entEdge, vertexCount, d_ee, edgeCount, cg_edge, cg_edgeCount, tree, len(tree))
+        generatePartialContig(outfile, d_ev, vertexCount, d_ee, edgeCount, lmerLength)
+
     logger.info("finished")
 
 def read_fasta(infilename):
