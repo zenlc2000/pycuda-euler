@@ -340,31 +340,33 @@ def findSpanningTree(cg_edge, cg_edgecount, cg_vertexcount,):
      
     return tree
 
-def translate(i):
-    bases = ['A', 'C', 'G', 'T']
+def dna_translate(i):
+    bases = {0:'A', 1:'C', 2:'G', 3:'T'}
     if i < 4:
         return bases[i]
     else:
         return '.'
 
-def getString(kmer, length, value):
-    currentValue = value
+def getString(length, value):
+    kmer = [0] * length
+    currentValue = int(value)
     for i in range(1, length + 1):
-        kmer[length - i] = translate(currentValue % 4)
+        kmer[length - i] = dna_translate(currentValue % 4)
         currentValue //= 4
-    return kmer
+    return ''.join(kmer)
 
 
 def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
     logger = logging.getLogger(__name__)
-    d_contigStart = np.ones(ecount, dtype='S')
+    logger.info("Starting")
+    d_contigStart = np.ones(ecount, dtype=np.uintc)
     d_contigStart = et.identify_contig_start(d_ee, d_contigStart, ecount)
     h_contigStart = np.copy(d_contigStart)
 
     h_ev = np.zeros(vcount, dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
     h_ee = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
-    buffer = np.zeros(l, dtype='S')
-    h_visited = np.zeros(ecount, dtype='S')
+    buffer = []
+    h_visited = np.zeros(ecount, dtype=np.uintc)
     h_ev = np.copy(d_ev)
     h_ee = np.copy(d_ee)
 
@@ -374,31 +376,54 @@ def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
 
     with open(outfile, 'w') as ofile:
         for i in range(ecount):
-            if h_contigStart[i] != 0 and h_visited == 0:
+            if h_contigStart[i] != 0 and h_visited[i] == 0:
                 ofile.write('>%u\n' % count)
                 logger.debug('>%u\n' % count)
                 count += 1
-                ee = h_ee[i]
-                index = ee['vid']
-                ev = h_ev[index]
-                buffer = getString(buffer, l -1, ev['vid'])
-                ofile.write(buffer)
-                logger.debug(buffer)
+                buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
+                # ofile.write(''.join(buffer))
+                # logger.debug(''.join(buffer))
                 next = i
                 while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
                     h_visited[next] = 1
                     next = h_ee[next]['s']
-                    buffer = getString(buffer, l - 1, h_ev[h_ee[next]['s']]['vid'] )
-                    ofile.write('%s' % buffer + str(l - 2))
-                    logger.debug('%s' % buffer + str(l - 2))
+                    buffer.append(getString(l - 1, h_ev[h_ee[next]['s']]['vid'] ))
+                    # ofile.write('%s' % ''.join(buffer) + str(l - 2))
+                    # logger.debug('%s' % ''.join(buffer) + str(l - 2))
                     edgeCount += 1
                 if h_visited[next] == 0: # for circular paths
-                    buffer = getString(buffer, l - 1, h_ev[h_ee[next]['v2']]['vid'])
-                    ofile.write('%s' % buffer + str(l - 2))
-                    logger.debug('%s' % buffer + str(l - 2))
+                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
+                    # ofile.write('%s' % buffer + str(l - 2))
+                    # logger.debug('%s' % buffer + str(l - 2))
                     h_visited[next] = 1
                     edgeCount += 1
-                ofile.write('\n\n')
+                ofile.write(''.join(buffer) + '\n\n')
+                buffer = []
+        for i in range(ecount):
+            if h_visited[i] == 0:
+                ofile.write('>%u\n' % count)
+                logger.debug('>%u\n' % count)
+                count += 1
+                buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
+                # ofile.write(''.join(buffer))
+                # logger.debug(''.join(buffer))
+                next = i
+                while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
+                    h_visited[next] = 1
+                    next = h_ee[next]['s']
+                    buffer.append(getString(l - 1, h_ev[h_ee[next]['s']]['vid'] ))
+                    # ofile.write('%s' % ''.join(buffer) + str(l - 2))
+                    # logger.debug('%s' % ''.join(buffer) + str(l - 2))
+                    edgeCount += 1
+                if h_visited[next] == 0: # for circular paths
+                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
+                    # ofile.write('%s' % buffer + str(l - 2))
+                    # logger.debug('%s' % buffer + str(l - 2))
+                    h_visited[next] = 1
+                    edgeCount += 1
+                ofile.write(''.join(buffer) + '\n\n')
+                buffer = []
+    logger.info("Finished")
 
 
 
@@ -451,7 +476,7 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     """
     # TODO: figure out logging
     # TODO: Unit testing
-    logging.getLogger('eulercuda.assemble2')
+    logger = logging.getLogger(__name__)
     # for performance reasons, may want to make these Numpy arrays
 
     # char * 		readBuffer=NULL;
