@@ -4,13 +4,14 @@ import pycuda.autoinit as autoinit
 from pycuda.compiler import SourceModule
 import logging
 import pycuda
+import pycuda.gpuarray as gpuarray
 from pycuda.tools import OccupancyRecord
 module_logger = logging.getLogger('eulercuda.pyencode')
 
 
 def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
-    logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
-    logger.info("started.")
+    # module_logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
+    module_logger.info("started encode_lmer_device.")
     mod = SourceModule("""
     #include <stdio.h>
     typedef unsigned  long long KEY_T ;
@@ -61,7 +62,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                                     codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
         }
         lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
-        printf(" offset = %u, lmer = %llu ", (tid + rOffset),lmer);
+        // printf(" offset = %u, lmer = %llu ", (tid + rOffset),lmer);
         lmers[rOffset+tid]=lmer;
 
         __syncthreads();
@@ -71,28 +72,30 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     encode_lmer = mod.get_function("encodeLmerDevice")
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-    logger.debug("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
-
+    module_logger.debug("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
-        logger.info("Going to GPU.")
+        module_logger.info("Going to GPU.")
+        np_d_lmers = gpuarray.to_gpu(d_lmers)
         encode_lmer(drv.In(buffer),
-                    drv.Out(d_lmers),
+                    np_d_lmers,
                     np.uintc(lmerLength),
                     block=block_dim,
                     grid=grid_dim,
                     shared=readLength + 31)
+        np_d_lmers.get(d_lmers)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
-    logger.debug("Generated %s lmers." % (len(d_lmers)))
+    module_logger.debug("Generated %s lmers." % (len(d_lmers)))
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
-    logger.info("finished. Leaving.")
+    module_logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    module_logger.info("finished encode_lmer_device.")
+    return d_lmers
 
 
 def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCount):
-    logger = logging.getLogger('eulercuda.pyencode.compute_kmer_device')
-    logger.info("started.")
+    # module_logger = logging.getLogger('eulercuda.pyencode.compute_kmer_device')
+    module_logger.info("started compute_kmer_device.")
     mod = SourceModule("""
     typedef unsigned  long long KEY_T ;
     typedef KEY_T * KEY_PTR ;
@@ -127,27 +130,33 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     compute_kmer = mod.get_function("computeKmerDevice")
 
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-
+    np_pkmers = gpuarray.to_gpu(pkmers)
+    np_skmers = gpuarray.to_gpu(skmers)
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
-        logger.info("Going to GPU.")
+        module_logger.info("Going to GPU.")
         compute_kmer(
             drv.In(lmers),
-            drv.Out(pkmers),
-            drv.Out(skmers),
+            np_pkmers,
+            np_skmers,
             np.ulonglong(kmerBitMask),
             np.uintc(readCount),
             block=block_dim, grid=grid_dim
         )
+        np_pkmers.get(pkmers)
+        np_skmers.get(skmers)
+    else:
+        module_logger.warn("PROBLEM WITH GPU.")
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    module_logger.debug("Occupancy = %s" % (orec.occupancy * 100))
 
-    logger.info("leaving.")
+    module_logger.info("leaving compute_kmer_device.")
+    return pkmers, skmers
 
 
 def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength):
-    logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
-    logger.info("started.")
+    # logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
+    module_logger.info("started compute_lmer_complement_device.")
     mod = SourceModule("""
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
@@ -196,22 +205,26 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
 
-    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
-    np_lmerLength = np.uintc(lmerLength)
+    module_logger.debug('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
-        logger.info("Going to GPU.")
+        np_lmerLength = np.uintc(lmerLength)
+        np_d_lmers = gpuarray.to_gpu(d_lmers)
+        module_logger.info("Going to GPU.")
         encode_lmer_complement(
-            drv.In(buffer),  drv.InOut(d_lmers), np_lmerLength, np.uintc(readCount),
+            drv.In(buffer),  np_d_lmers, np_lmerLength, np.uintc(readCount),
             block=block_dim, grid=grid_dim,  shared=readLength + 31
         )
+        np_d_lmers.get(d_lmers)
     else:
         print("Problem with data to GPU")
-        logger.info("problem with data to GPU.")
+        module_logger.warn("problem with data to GPU.")
+
     devdata = pycuda.tools.DeviceData()
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    module_logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
-    logger.info("Finished. Leaving.")
+    module_logger.info("Finished compute_lmer_complement_device.")
+    return d_lmers
 
 
 # getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);

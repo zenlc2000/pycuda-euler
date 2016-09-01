@@ -24,8 +24,8 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
     :param ecount:
     :return:
     """
-    logger = logging.getLogger('eulercuda.pyeulertour.assign_successor_device')
-    logger.info("started.")
+    # logger = logging.getLogger('eulercuda.pyeulertour.assign_successor_device')
+    module_logger.info("started assign_successor_device.")
     mod = SourceModule("""
     #include <stdio.h>
     typedef unsigned long long  KEY_T ;
@@ -49,22 +49,38 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
         unsigned int  lcount;
     }EulerVertex;
 
-    __global__  void assignSuccessor(EulerVertex * ev,unsigned int * l, unsigned int * e, unsigned vcount, EulerEdge * ee ,unsigned int ecount){
+    __global__  void assignSuccessor(
+                        EulerVertex * ev,
+                        unsigned int * l,
+                        unsigned int * e,
+                        unsigned vcount,
+                        EulerEdge * ee ,
+                        unsigned int ecount)
+    {
         unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
         unsigned int eidx = 0;
         if(tid < vcount)
-      {
-            while(eidx < ev[tid].ecount && eidx < ev[tid].lcount){
-                ee[e[ev[tid].ep + eidx]].s = l[ev[tid].lp + eidx] ;
+        {
+            while(eidx < ev[tid].ecount && eidx < ev[tid].lcount)
+            {
+                unsigned int eindex, lindex, eeindex;
+                eindex = ev[tid].ep + eidx;
+                lindex = ev[tid].lp + eidx;
+                eeindex = e[ev[tid].ep + eidx];
+                if (eeindex < vcount)
+                {
+                    printf(" e = %u, l = %u, ee = %u ", eindex, lindex, eeindex);
+                    ee[e[ev[tid].ep + eidx]].s = l[ev[tid].lp + eidx] ;
+                }
                 eidx++;
             }
         }
     }
     """)
     free, total = drv.mem_get_info()
-    logger.info(" %s free out of %s total memory" % (free, total) )
+    module_logger.debug(" %s free out of %s total memory" % (free, total) )
     block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 256)
-    logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    module_logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_ev = gpuarray.to_gpu(d_ev)
     np_d_ee = gpuarray.to_gpu(d_ee)
     assign_successor = mod.get_function("assignSuccessor")
@@ -77,12 +93,12 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # module_logger.info("Occupancy = %s" % (orec.occupancy * 100))
     np_d_ev.get(d_ev)
     np_d_ee.get(d_ee)
-    logger.info("Finished. Leaving.")
+    module_logger.info("Finished. Leaving.")
     return d_ev, d_ee
 
 def construct_successor_graphP1_device(d_ee, d_v, ecount):
@@ -132,9 +148,9 @@ def construct_successor_graphP1_device(d_ee, d_v, ecount):
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     np_d_v.get(d_v)
     logger.info("Finished. Leaving.")
     return d_v
@@ -187,9 +203,9 @@ def construct_successor_graphP2_device(d_ee, d_v, ecount):
         np.uintc(ecount),
         block=block_dim, grid=grid_dim
     )
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     np_d_v.get(d_v)
     logger.info("Finished. Leaving.")
     return d_v
@@ -222,9 +238,9 @@ def calculate_circuit_graph_vertex_data_device(d_D, d_C, length):
     )
     np_d_D.get(d_D)
     np_d_C.get(d_C)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     logger.info("Finished. Leaving.")
     return d_D, d_C
 
@@ -277,9 +293,9 @@ def construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv):
         block=block_dim, grid=grid_dim
     )
     np_d_cv.get(d_cv)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     return d_cv
 
 
@@ -349,9 +365,9 @@ def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecoun
         block=block_dim, grid=grid_dim
     )
     np_d_cedgeCount.get(d_cedgeCount)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.info("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.info("Occupancy = %s" % (orec.occupancy * 100))
     return d_cedgeCount
 
 
@@ -446,9 +462,10 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
         block=block_dim, grid=grid_dim
     )
     np_d_cg_edge.get(d_cg_edge)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    logger.info('Finished.')
     return d_cg_edge
 
 def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
@@ -525,9 +542,10 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
     )
     np_d_ee.get(d_ee)
     np_d_mark.get(d_mark)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    logger.info('Finished.')
     return d_ee, d_mark
 
 
@@ -586,9 +604,10 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
         grid = grid_dim
     )
     np_d_mark.get(d_mark)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    logger.info('Finished.')
     return d_mark
 
 
@@ -638,14 +657,15 @@ def identify_contig_start(d_ee, d_contigStart, ecount):
         grid=grid_dim
     )
     np_d_contigStart.get(d_contigStart)
-    devdata = pycuda.tools.DeviceData()
-    orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
-    logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    # devdata = pycuda.tools.DeviceData()
+    # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
+    # logger.debug("Occupancy = %s" % (orec.occupancy * 100))
+    logger.info('Finished.')
     return d_contigStart
 
 
-def markContigStart(d_ee, d_contigStart, ecount):
-    pass
+# def markContigStart(d_ee, d_contigStart, ecount):
+#     pass
 
 
 

@@ -132,8 +132,8 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     values_gpu = gpuarray.to_gpu(np_d_values)
     offset_gpu = gpuarray.to_gpu(d_offset)
     # start_gpu = gpuarray.to_gpu(np_d_start)
-    # bufferK_gpu = gpuarray.to_gpu(np_d_bufferK)
-    # bufferV_gpu = gpuarray.to_gpu(np_d_bufferV)
+    np_d_bufferK = gpuarray.to_gpu(d_bufferK)
+    np_d_bufferV = gpuarray.to_gpu(d_bufferV)
     block_dim = (1024, 1, 1)
     if (d_length//1024) == 0:
         grid_dim = (1, 1, 1)
@@ -147,20 +147,21 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         np.uintc(d_length),
         drv.In(d_start), #start_gpu,
         np.uintc(bucketCount),
-        drv.Out(d_bufferK), #bufferK_gpu,
-        drv.Out(d_bufferV), #bufferV_gpu,
+        np_d_bufferK, #bufferK_gpu,
+        np_d_bufferV, #bufferV_gpu,
         grid = grid_dim,
         block = block_dim
     )
     # devdata = pycuda.tools.DeviceData()
     # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     # logger.info("Occupancy = %s" % (orec.occupancy * 100))
-
+    np_d_bufferK.get(d_bufferK)
+    np_d_bufferV.get(d_bufferV)
     logger.info('Finished. Leaving.')
     # d_start  = start_gpu.get()
     # d_bufferK = bufferK_gpu.get()
     # d_bufferV = bufferV_gpu.get()
-    # return [d_bufferK, d_bufferV, d_start]
+    return d_bufferK, d_bufferV
 
 
 def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount, d_TK, d_TV):
@@ -227,24 +228,28 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
     block_dim = (32, 1, 1)
     grid_dim = (bucketCount, 1, 1)#(32, 1, 1)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    np_d_TK = gpuarray.to_gpu(d_TK)
+    np_d_TV = gpuarray.to_gpu(d_TV)
     bucket_sort(
         drv.In(d_bufferK),
         drv.In(d_bufferV),
         drv.In(d_start),
         drv.In(d_bucketSize),
         np.uintc(bucketCount),
-        drv.Out(d_TK),
-        drv.Out(d_TV),
+        np_d_TK,
+        np_d_TV,
         grid=grid_dim,
         block=block_dim # What about shared? Original source doesn't have it.
 
     )
+    np_d_TK.get(d_TK)
+    np_d_TV.get(d_TV)
     devdata = pycuda.tools.DeviceData()
     # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     # logger.info("Occupancy = %s" % (orec.occupancy * 100))
 
     logger.info("Finished. Leaving.")
-    # return [d_TK, d_TV]
+    return d_TK, d_TV
 
 
 def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength, d_bucketSize, bucketCount):
@@ -261,7 +266,7 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
 
     dataSize = d_length * sys.getsizeof(np.uintc)
     bucketDataSize = bucketCount * sys.getsizeof(np.uintc)
-    d_bucketSize = np.zeros(bucketDataSize, dtype='I')
+    d_bucketSize = np.zeros(bucketCount, dtype='I')
     # d_bucketSize[0] = bucketDataSize
     d_offset = np.zeros(dataSize, dtype='I')
     #   d_bucketSize = np.empty(bucketDataSize, dtype = np.uint)
@@ -285,14 +290,14 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
     d_bufferV = np.zeros(d_length * sys.getsizeof(np.uintc)).astype(np.uintc)
     # / ** ** ** ** ** ** ** *Cuckoo Hashing ** ** ** ** ** ** ** ** ** /
     # result = \
-    copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV)
+    d_bufferK, d_bufferV = copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV)
     # d_bufferK = result[0]
     # d_bufferV = result[1]
     # d_start = result[2]
     d_TK = np.zeros(bucketCount * BUCKET_KEY_SIZE, dtype='Q')
     d_TV = np.zeros(bucketCount * BUCKET_VALUE_SIZE, dtype='I')
     # result = \
-    bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount, d_TK, d_TV)
+    d_TK, d_TV = bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount, d_TK, d_TV)
     tableLength = bucketCount * MAX_BUCKET_ITEM
     logger.info("Finished. Leaving.")
     return [tableLength, d_bucketSize, bucketCount, d_TK, d_TV]
