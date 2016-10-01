@@ -11,7 +11,8 @@ from encoder.pyencode import getOptimalLaunchConfiguration
 from component.pycomponent import find_component_device
 
 module_logger = logging.getLogger('eulercuda.pyeulertour')
-
+# ULONGLONG = 8
+# UINTC = 4
 
 def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
     """
@@ -66,11 +67,15 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
                 unsigned int eindex, lindex, eeindex;
                 eindex = ev[tid].ep + eidx;
                 lindex = ev[tid].lp + eidx;
-                eeindex = e[ev[tid].ep + eidx];
-                if (eeindex < vcount)
+                if (eindex < ecount)
                 {
-                    printf(" e = %u, l = %u, ee = %u ", eindex, lindex, eeindex);
-                    ee[e[ev[tid].ep + eidx]].s = l[ev[tid].lp + eidx] ;
+
+                    eeindex = e[ev[tid].ep + eidx];
+                    if (eindex < ecount && lindex < ecount && eeindex < ecount)
+                    {
+                      //  printf(" e = %u, l = %u, ee = %u ", eindex, lindex, eeindex);
+                        ee[e[ev[tid].ep + eidx]].s = l[ev[tid].lp + eidx] ;
+                    }
                 }
                 eidx++;
             }
@@ -78,7 +83,7 @@ def assign_successor_device(d_ev, d_l, d_e, vcount, d_ee, ecount):
     }
     """)
     free, total = drv.mem_get_info()
-    module_logger.debug(" %s free out of %s total memory" % (free, total) )
+    # module_logger.debug(" %s free out of %s total memory" % (free, total) )
     block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 256)
     module_logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_ev = gpuarray.to_gpu(d_ev)
@@ -314,6 +319,7 @@ def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecoun
     logger = logging.getLogger('eulercuda.pyeulertour.calculate_circuit_graph_edge_data')
     logger.info("started.")
     mod = SourceModule("""
+    #include <stdio.h>
         typedef unsigned long long  KEY_T;
         typedef struct EulerVertex{
             KEY_T	vid;
@@ -322,29 +328,42 @@ def calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecoun
             unsigned int  lp;
             unsigned int  lcount;
         }EulerVertex;
-        __global__ void calculateCircuitGraphEdgeData(EulerVertex* v, unsigned int * e, unsigned vCount, unsigned int * D,
-                                  unsigned int * map, unsigned int ecount, unsigned int * cedgeCount)
+        __global__ void calculateCircuitGraphEdgeData(
+                                    EulerVertex* v,
+                                    unsigned int * e,
+                                    unsigned vCount,
+                                    unsigned int * D,
+                                    unsigned int * map,
+                                    unsigned int ecount,
+                                    unsigned int * cedgeCount)
         {
 
             unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
             unsigned int index = 0;
             unsigned int maxIndex = 0;
+            unsigned int c1;
+            unsigned int c2;
             index = 0;
             maxIndex = 0;
             if(tid < vCount && v[tid].ecount > 0 )
             {
                 index = v[tid].ep;
-                maxIndex = index+v[tid].ecount - 1;
-                while (index < maxIndex )
+                maxIndex = index + v[tid].ecount - 1;
+               // printf(" index = %u, max = %u ", index, maxIndex);
+                while (index < maxIndex && index < ecount )
                 {
-                    unsigned int c1 = map[D[e[index]]];
-                    unsigned int c2 = map[D[e[index+1]]];
-                    if( c1 != c2)
-                    {
-                        unsigned int c = min(c1, c2);
-                        atomicInc(cedgeCount+c, ecount);
-                    }
 
+                    if (e[index] < ecount && e[index + 1] < ecount)
+                    {
+                       // printf(" map = %u, D = %u ",  map[D[e[index]]], D[e[index]]);
+                        c1 = map[D[e[index]]];
+                        c2 = map[D[e[index + 1]]];
+                        if( c1 != c2)
+                        {
+                            unsigned int c = min(c1, c2);
+                            atomicInc(cedgeCount + c, ecount);
+                        }
+                    }
                     index++;
                 }
             }
@@ -426,18 +445,23 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
         if(tid<vCount && v[tid].ecount>0){
             index=v[tid].ep;
             maxIndex=index+v[tid].ecount-1;
-            while (index<maxIndex   ){
-                unsigned int c1=map[D[e[index]]];
-                unsigned int c2=map[D[e[index+1]]];
-                if( c1 !=c2){
-                    unsigned int c=min(c1,c2);
-                    unsigned int t=max(c1,c2);
-                    unsigned int i=atomicDec(cedgeCount+c,ecount);
-                    i=i-1;
-                    cedge[cedgeOffset[c]+i].c1=c;
-                    cedge[cedgeOffset[c]+i].c2=t;
-                    cedge[cedgeOffset[c]+i].e1=e[index];
-                    cedge[cedgeOffset[c]+i].e2=e[index+1];
+            while (index<maxIndex  && index < ecount )
+            {
+                if (e[index] < ecount && e[index + 1] < ecount)
+                {
+                    unsigned int c1=map[D[e[index]]];
+                    unsigned int c2=map[D[e[index+1]]];
+                    if( c1 != c2)
+                    {
+                        unsigned int c=min(c1,c2);
+                        unsigned int t=max(c1,c2);
+                        unsigned int i=atomicDec(cedgeCount+c,ecount);
+                        i=i-1;
+                        cedge[cedgeOffset[c]+i].c1=c;
+                        cedge[cedgeOffset[c]+i].c2=t;
+                        cedge[cedgeOffset[c]+i].e1=e[index];
+                        cedge[cedgeOffset[c]+i].e2=e[index+1];
+                    }
                 }
                 index++;
             }
@@ -468,7 +492,7 @@ def assign_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, 
     logger.info('Finished.')
     return d_cg_edge
 
-def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
+def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark, ecount):
     logger = logging.getLogger('eulercuda.pyeulertour.execute_swipe')
     logger.info("started.")
     mod = SourceModule("""
@@ -491,42 +515,51 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
         unsigned int pad;
     }EulerEdge;
 
-    __global__ void executeSwipe(EulerVertex * ev,unsigned int * e, unsigned int vcount , EulerEdge * ee, unsigned int * mark,unsigned int ecount)
-    {
+    __global__ void executeSwipe(
+                                EulerVertex * ev,
+                                unsigned int * e,
+                                unsigned int vcount ,
+                                EulerEdge * ee,
+                                unsigned int * mark,
+                                unsigned int ecount)
+        {
 
         unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
         unsigned int t;
         unsigned int index=0;
         unsigned int maxIndex;
         unsigned int s;
-        if( tid< vcount)
+        if (tid < vcount)
         {
-            index=ev[tid].ep;
-            maxIndex=index+ev[tid].ecount-1;
-            while( index<maxIndex)
+            index = ev[tid].ep;
+            maxIndex = index + ev[tid].ecount - 1;
+            while (index < maxIndex && ee[e[index]].eid < ecount)
             {
 
-                if(mark[ee[e[index]].eid]==1)
+              /*  if (mark[ee[e[index]].eid] == 1)
                 {
-                    t=index;
-                    s=ee[e[index]].s;
-                    while(mark[ee[e[index]].eid]==1 && index < maxIndex)
+                    t = index;
+                    s = ee[e[index]].s;
+                    while (mark[ee[e[index]].eid] == 1 && index < maxIndex)
                     {
-                        ee[e[index]].s=ee[e[index+1]].s;
-                        index=index+1;
+                        ee[e[index]].s = ee[e[index+1]].s;
+                        index = index + 1;
                     }
-                    if(t!=index)
+                    if(t != index)
                     {
-                        ee[e[index]].s=s;
+                        ee[e[index]].s = s;
                     }
-                }
+                }  */
                 index++;
             }
 
         }
     }
+
+
+
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(vcount, 512)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(vcount.item(), 512)
     np_d_mark = gpuarray.to_gpu(d_mark)
     np_d_ee = gpuarray.to_gpu(d_ee)
     swipe = mod.get_function('executeSwipe')
@@ -537,6 +570,7 @@ def execute_swipe(d_ev, d_e, vcount, d_ee, d_mark,ecount):
         np_d_ee,      # may have to do this one the "long way"
         np_d_mark,
         np.uintc(ecount),
+        np.uintc(d_ee.size),
         block = block_dim,
         grid = grid_dim
     )
@@ -576,7 +610,15 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
         unsigned int pad;
     }EulerEdge;
 
-    __global__ void  markSpanningEulerEdges(EulerEdge * ee, unsigned int * mark , unsigned int ecount,CircuitEdge * cg_edge,unsigned int cg_edgeCount,unsigned int * tree, unsigned int treeCount){
+    __global__ void  markSpanningEulerEdges(
+                                            EulerEdge * ee,
+                                            unsigned int * mark ,
+                                            unsigned int ecount,
+                                            CircuitEdge * cg_edge,
+                                            unsigned int cg_edgeCount,
+                                            unsigned int * tree,
+                                            unsigned int treeCount)
+    {
 
         unsigned int tid=(blockDim.x*blockDim.y * gridDim.x*blockIdx.y) + (blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y)+threadIdx.x;
         if(tid < treeCount)
@@ -612,7 +654,7 @@ def mark_spanning_euler_edges(d_ee, d_mark , ecount,d_cg_edge,cg_edgeCount,d_tre
 
 
 def executeSwipeDevice(d_ev, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, d_tree, treeCount):
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('pyeulertour.executeSwipeDevice')
     logger.info("started.")
     d_mark = np.ones(ecount, dtype=np.uintc)
     # block_dim, grid_dim = getOptimalLaunchConfiguration(treeCount, 512)
@@ -623,7 +665,7 @@ def executeSwipeDevice(d_ev, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount,
 
 
 def identify_contig_start(d_ee, d_contigStart, ecount):
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('pyeulertour.identify_contig_start')
     logger.info("started.")
     mod = SourceModule("""
     typedef unsigned long long  KEY_T ;
@@ -646,7 +688,7 @@ def identify_contig_start(d_ee, d_contigStart, ecount):
     }
 
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(ecount, 512)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(ecount.item(), 512)
     np_d_contigStart = gpuarray.to_gpu(d_contigStart)
     c_start = mod.get_function('identifyContigStart')
     c_start(
@@ -720,15 +762,15 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
     cg_vertexCount = circuitVertexSize
 
     # allocateMemory((void **) & d_cv, circuitVertexSize * sizeof(unsigned int));
-    data_size = circuitVertexSize #* sys.getsizeof(np.uintc)
+    data_size = circuitVertexSize #* UINTC #* sys.getsizeof(np.uintc)
     d_cv = np.zeros(data_size, dtype=np.uintc)
     d_cv = construct_circuit_Graph_vertex(d_C, d_cg_offset, ecount, d_cv)
 
-    d_cedgeCount = np.zeros_like(d_cv) # same C size allocated and type
+    d_cedgeCount = np.zeros(ecount, dtype=np.uintc) # same C size allocated and type
     if circuitVertexSize > 1:
         d_cedgeCount = calculate_circuit_graph_edge_data(d_ev, d_e, vcount, d_D, d_cg_offset, ecount, d_cedgeCount)
 
-        d_cg_edge_start = np.zeros_like(d_cv)
+        d_cg_edge_start = np.zeros_like(d_cedgeCount)
         np_d_cedgeCount = gpuarray.to_gpu(d_cedgeCount)
         knl(np_d_cedgeCount)
         np_d_cedgeCount.get(d_cg_edge_start)
@@ -737,7 +779,7 @@ def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCoun
         buffer[1] = d_cedgeCount[len(d_cedgeCount) - 1]   #[circuitVertexSize - 1]
         circuitGraphEdgeCount = buffer[0] + buffer[1]
 
-        edge_size = 5 * sys.getsizeof(np.uintc)
+        # edge_size = 5 * UINTC # sys.getsizeof(np.uintc)
         # d_cg_edge = np.zeros(edge_size, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
         # d_cg_edge = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
         d_cg_edge = np.zeros(circuitGraphEdgeCount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])

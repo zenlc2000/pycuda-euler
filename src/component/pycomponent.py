@@ -10,6 +10,8 @@ import logging
 
 from pyencode import getOptimalLaunchConfiguration
 
+# ULONGLONG = 8
+# UINTC = 4
 
 def component_step_init(d_v, d_D, d_Q, length):
     """
@@ -673,7 +675,7 @@ def find_component_device(d_v, d_D,  length):
     """
     logger = logging.getLogger('eulercuda.pycomponent.find_component_device')
     logger.info("started.")
-    mem_size = length * sys.getsizeof(np.uintc)
+    mem_size = length
     d_prevD = np.zeros(mem_size, dtype=np.uintc)
     d_Q = np.zeros_like(d_prevD)
     d_t1 = np.zeros_like(d_prevD)
@@ -687,7 +689,7 @@ def find_component_device(d_v, d_D,  length):
     d_D, d_Q = component_step_init(d_v, d_D, d_Q, length)
     s, sp = 1, 1
 
-    sptemp = drv.pagelocked_zeros(sys.getsizeof(np.intc), dtype=np.intc, mem_flags=drv.host_alloc_flags.DEVICEMAP)
+    sptemp = drv.pagelocked_zeros(4, dtype=np.intc, mem_flags=drv.host_alloc_flags.DEVICEMAP)
     d_sptemp = np.intp(sptemp.base.get_device_pointer())
 
     while s == sp:

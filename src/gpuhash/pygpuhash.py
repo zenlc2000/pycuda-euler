@@ -12,7 +12,8 @@ import logging
 module_logger = logging.getLogger('eulercuda.pygpuhash')
 
 MAX_BUCKET_ITEM = 520
-
+ULONGLONG = 8
+UINTC = 4
 
 def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     logger = logging.getLogger('eulercuda.pygpuhash.phase1_device')
@@ -107,18 +108,23 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
       {
             unsigned long long key = keys[tid];
             unsigned int bucket = hash_h(key,bucketCount);
+
            // printf(" bucket = %u ", bucket);
+
             unsigned int value = values[tid];
             unsigned int index = start[bucket] + offset[tid];
+
            // printf(" index = %u ", index);
            // printf(" tid = %u, offset = %u bucket = %u start = %u index = %u ", tid, offset[tid], bucket, start[bucket], (start[bucket] + offset[tid]));
+
             bufferK[index] = key;
             bufferV[index] = value;
+
             //printf(" bufferV = %u ", bufferV[index]);
 
         }
     }
-    """, options=['--compiler-options', '-Wall'])
+    """)
     copy_to_bucket = mod.get_function("copyToBucket")
 
     np_d_keys = np.array(d_keys).astype(np.ulonglong)
@@ -174,8 +180,8 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
     typedef VALUE_T             *VALUE_PTR;
     #define MAX_BUCKET_ITEM (520)
 
-    #define GET_KEY_INDEX(blockIdx,itemIdx) ((blockIdx)*MAX_BUCKET_ITEM+(itemIdx))
-    #define GET_VALUE_INDEX(blockIdx,itemIdx) ((blockIdx)*MAX_BUCKET_ITEM+(itemIdx))
+    #define GET_KEY_INDEX(blockIdx,itemIdx) ((blockIdx) * MAX_BUCKET_ITEM + (itemIdx))
+    #define GET_VALUE_INDEX(blockIdx,itemIdx) ((blockIdx) * MAX_BUCKET_ITEM + (itemIdx))
 
     __global__ void bucketSort(
                                 KEY_PTR         bufferK,
@@ -202,9 +208,9 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
         }
 
         __syncthreads();
-        for(unsigned int j = 0;j < chunks; j++)
+        for (unsigned int j = 0; j < chunks; j++)
         {
-            if((j << 5) + threadIdx.x < size)
+            if ((j << 5) + threadIdx.x < size)
             {
                 keyCount[j] = 0;
                 for(int i=0; i < size; i++)
@@ -214,16 +220,16 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
             }
         }
             __syncthreads();
-        for(unsigned int j = 0; j < chunks; j++)
+        for (unsigned int j = 0; j < chunks; j++)
         {
-            if((j << 5) + threadIdx.x < size)
+            if ((j << 5) + threadIdx.x < size)
             {
                 TK[GET_KEY_INDEX(blockIdx.x, keyCount[j])] = keys[(j << 5) + threadIdx.x];
                 TV[GET_VALUE_INDEX(blockIdx.x, keyCount[j])] = bufferV[blockOffset + (j << 5) + threadIdx.x];
             }
         }
     }
-    """, options=['--compiler-options', '-Wall'])
+    """)
     bucket_sort = mod.get_function('bucketSort')
     block_dim = (32, 1, 1)
     grid_dim = (bucketCount, 1, 1)#(32, 1, 1)
@@ -256,16 +262,18 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
     logger = logging.getLogger('eulercuda.pygpuhash.create_hash_table_device')
     logger.info("started.")
     # d_start = np.zeros(bucketDataSize, dtype = np.uint32)
-    KEY_SIZE = sys.getsizeof(np.ulonglong)
-    VALUE_SIZE = sys.getsizeof(np.uintc)
-    BUCKET_KEY_SIZE = KEY_SIZE * MAX_BUCKET_ITEM
-    BUCKET_VALUE_SIZE = VALUE_SIZE * MAX_BUCKET_ITEM
+    KEY_SIZE = ULONGLONG #sys.getsizeof(np.ulonglong)
+    VALUE_SIZE = UINTC #sys.getsizeof(np.uintc)
 
+    # BUCKET_KEY_SIZE = KEY_SIZE * MAX_BUCKET_ITEM
+    # BUCKET_VALUE_SIZE = VALUE_SIZE * MAX_BUCKET_ITEM
+    BUCKET_KEY_SIZE = MAX_BUCKET_ITEM
+    BUCKET_VALUE_SIZE = MAX_BUCKET_ITEM
 
     bucketCount = (d_length // 409) + 1 # ceil
 
-    dataSize = d_length * sys.getsizeof(np.uintc)
-    bucketDataSize = bucketCount * sys.getsizeof(np.uintc)
+    dataSize = d_length #* UINTC# .getsizeof(np.uintc)
+    bucketDataSize = bucketCount #* UINTC #  sys.getsizeof(np.uintc)
     d_bucketSize = np.zeros(bucketCount, dtype='I')
     # d_bucketSize[0] = bucketDataSize
     d_offset = np.zeros(dataSize, dtype='I')
@@ -286,18 +294,21 @@ def create_hash_table_device(d_keys, d_values, d_length, d_TK, d_TV, tableLength
     logger.info('Post scan.')
     d_start = np_d_start.get()
 
-    d_bufferK = np.zeros(d_length * sys.getsizeof(np.ulonglong)).astype(np.ulonglong)
-    d_bufferV = np.zeros(d_length * sys.getsizeof(np.uintc)).astype(np.uintc)
+    d_bufferK = np.zeros(d_length).astype(np.ulonglong)
+    d_bufferV = np.zeros(d_length).astype(np.uintc)
     # / ** ** ** ** ** ** ** *Cuckoo Hashing ** ** ** ** ** ** ** ** ** /
     # result = \
     d_bufferK, d_bufferV = copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketCount, d_bufferK, d_bufferV)
     # d_bufferK = result[0]
     # d_bufferV = result[1]
     # d_start = result[2]
-    d_TK = np.zeros(bucketCount * BUCKET_KEY_SIZE, dtype='Q')
-    d_TV = np.zeros(bucketCount * BUCKET_VALUE_SIZE, dtype='I')
+    d_TK = np.zeros(bucketCount * MAX_BUCKET_ITEM, dtype='Q')
+    d_TV = np.zeros(bucketCount * MAX_BUCKET_ITEM, dtype='I')
     # result = \
     d_TK, d_TV = bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount, d_TK, d_TV)
+    with open ('hash_tk.txt', 'w') as ofile:
+        for line in d_TK:
+            ofile.write(str(line) + '\t' )
     tableLength = bucketCount * MAX_BUCKET_ITEM
     logger.info("Finished. Leaving.")
     return [tableLength, d_bucketSize, bucketCount, d_TK, d_TV]

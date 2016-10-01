@@ -9,13 +9,15 @@ import logging
 
 
 module_logger = logging.getLogger('eulercuda.pydebruijn')
-
+# ULONGLONG = 8
+# UINTC = 4
 
 def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
                           d_lcount, d_ecount, valid_bitmask, readLength, readCount):
     """
 
-    This kernel works on each l-mer, counting edges of the graph.
+    This kernel works on each l-mer, calculating the entering edges (ecount) and leaving edges (lcount) of the graph
+    using lmerKeys as input.
 
 
     :return:
@@ -50,20 +52,7 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     {
         return ((C0 + C1 * key) % LARGE_PRIME) % bucketCount;
     }
-/*
-    __forceinline__ __device__ unsigned int hash_g1(KEY_T key,unsigned int seed)
-    {
-        return ((C10^seed + (C11^seed) * key) % LARGE_PRIME) % L2_SIZE;
-    }
-    __forceinline__ __device__ unsigned int hash_g2(KEY_T key,unsigned int seed)
-    {
-        return ((C20^seed + (C21^seed) * key) % LARGE_PRIME) % L2_SIZE;
-    }
-    __forceinline__ __device__ unsigned int hash_g3(KEY_T key,unsigned int seed)
-    {
-        return ((C30^seed + (C31^seed) * key) % LARGE_PRIME) % L2_SIZE;
-    }
-*/
+
     __forceinline__ __device__
     VALUE_T getHashValue(KEY_T key, KEY_PTR TK, VALUE_PTR TV, unsigned int *bucketSize,
                                         unsigned int bucketCount)
@@ -125,8 +114,10 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
             KEY_T suffix = (lmer & validBitMask);
             // printf(" prefix= %llu, suffix = %llu ", prefix, suffix);
             KEY_T lomask = 3;
+
             VALUE_T prefixIndex = getHashValue(prefix, TK, TV, bucketSeed, bucketCount);
             VALUE_T suffixIndex = getHashValue(suffix, TK, TV, bucketSeed, bucketCount);
+
             //printf(" prefixIndex = %u, suffixIndex = %u ", prefixIndex, suffixIndex);
             //printf(" prefixIndex << 2 = %u, suffixIndex << 2 = %u ", (prefixIndex << 2), (suffixIndex << 2));
 
@@ -134,16 +125,18 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
             KEY_T transitionFrom = ((lmer >> __popcll(validBitMask)) & lomask);
             KEY_T to_index = (prefixIndex << 2) + transitionTo;
             KEY_T from_index = (suffixIndex << 2) + transitionFrom;
+
             if (to_index < size)
             {
                 //printf(" transitionTo = %llu, transitionFrom = %llu ",transitionTo, transitionFrom);
                // printf(" lcountIndex = %llu, ecountIndex = %llu ", (prefixIndex << 2)+ transitionTo, (suffixIndex << 2)+ transitionFrom);
-                lcount[(prefixIndex << 2) + transitionTo] = lmerValue;
+                lcount[to_index] = lmerValue;
             }
+
             if (from_index < size)
             {
                 //printf(" lcount = %u ",  lcount[(prefixIndex << 2) + transitionTo]);
-                ecount[(suffixIndex << 2) + transitionFrom] = lmerValue;
+                ecount[from_index] = lmerValue;
             }
 
             //printf(" lcountIndex = %llu, ecountIndex = %llu ", (prefixIndex << 2)+ transitionTo, (suffixIndex << 2)+ transitionFrom);
@@ -194,7 +187,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
     # module_logger = logging.getLogger('eulercuda.pydebruijn.setup_vertices_device')
     module_logger.info("started setup_vertices_device.")
     mod = SourceModule("""
-    //#include <stdio.h>
+    #include <stdio.h>
     typedef unsigned long long  KEY_T ;
     typedef KEY_T               *KEY_PTR;
     typedef unsigned int        VALUE_T;
@@ -258,40 +251,36 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
         }
         else
         {
-            //printf(" MAX_INT = %u ", MAX_INT);
+            printf(" miss = %llu ", key);
             return MAX_INT;
         }
     }
 
-/*__global__ void setupVertices(
-                                   KEY_PTR kmerKeys,
-                                    unsigned int kmerCount,
-                                    KEY_PTR TK,
-                                    VALUE_PTR TV,
-                                    unsigned int * bucketSeed,
-                                    unsigned int bucketCount,
-                                    KEY_PTR ev_vid,
-                                    unsigned int * ev_ep,
-                                    unsigned int * ev_ecount,
-                                    unsigned int * ev_lp,
-                                    unsigned int * ev_lcount,
-                                    unsigned int * lcount,
-                                    unsigned int * loffset,
-                                    unsigned int * ecount,
-                                    unsigned int * eoffset)*/
-
-    __global__ void setupVertices(KEY_PTR kmerKeys, unsigned int kmerCount,
-            KEY_PTR TK, VALUE_PTR TV, unsigned int * bucketSeed,
-            unsigned int bucketCount, EulerVertex * ev, unsigned int * lcount,
-            unsigned int * loffset, unsigned int * ecount, unsigned int * eoffset, unsigned int size)
+    __global__ void setupVertices(
+                    KEY_PTR kmerKeys,
+                    unsigned int kmerCount,
+                    KEY_PTR TK,
+                    VALUE_PTR TV,
+                    unsigned int * bucketSeed,
+                    unsigned int bucketCount,
+                    EulerVertex * ev,
+                    unsigned int * lcount,
+                    unsigned int * loffset,
+                    unsigned int * ecount,
+                    unsigned int * eoffset,
+                    unsigned int size)
 
     {
         unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y)
                 + (blockDim.x * blockDim.y * blockIdx.x)
                 + (blockDim.x * threadIdx.y) + threadIdx.x;
-        if (tid < kmerCount) {
+        if (tid < kmerCount)
+        {
             KEY_T key = kmerKeys[tid];
             VALUE_T index = getHashValue(key, TK, TV, bucketSeed, bucketCount);
+
+          // printf(" key = %llu, index = %u ", key, index);
+
             if (index < size)
             {
                 ev[index].vid = key;
@@ -327,6 +316,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
         block=block_dim, grid=grid_dim
                     )
     np_d_ev.get(d_ev)
+   # vert = [v for v in d_ev if v['vid'] != 0]
     # devdata = pycuda.tools.DeviceData()
     # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[1])
     # module_logger.info("Occupancy = %s" % (orec.occupancy * 100))
@@ -410,47 +400,38 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
         }
     }
 
- /*   __global__ void setupEdges(
-                KEY_PTR  lmerKeys,
-                VALUE_PTR  lmerValues,
-                unsigned int *  lmerOffsets,
-                const unsigned int lmerCount,
-                KEY_PTR  TK,
-                VALUE_PTR  TV,
-                unsigned int *  bucketSeed,
-                const unsigned int bucketCount,
-                unsigned int *  l,
-                unsigned int *  e,
-                KEY_PTR ee_eid,
-                unsigned int * ee_v1,
-                unsigned int * ee_v2,
-                unsigned int * ee_s,
-                unsigned int * ee_pad,
-                unsigned int *  loffsets,
-                unsigned int *  eoffsets,
-                const KEY_T validBitMask) */
-
-    __global__ void setupEdges( KEY_PTR  lmerKeys,  VALUE_PTR  lmerValues,
-             unsigned int *  lmerOffsets, const unsigned int lmerCount,
-             KEY_PTR  TK, VALUE_PTR  TV, unsigned int *  bucketSeed,
-            const unsigned int bucketCount, unsigned int *  l,
-             unsigned int *  e, EulerEdge *  ee,
-             unsigned int *  loffsets, unsigned int *  eoffsets,
-            const KEY_T validBitMask)
+    __global__ void setupEdges(
+                                KEY_PTR  lmerKeys,
+                                VALUE_PTR  lmerValues,
+                                unsigned int *  lmerOffsets,
+                                const unsigned int lmerCount,
+                                KEY_PTR  TK,
+                                VALUE_PTR  TV,
+                                unsigned int *  bucketSeed,
+                                const unsigned int bucketCount,
+                                unsigned int *  l,
+                                unsigned int *  e,
+                                EulerEdge *  ee,
+                                unsigned int *  loffsets,
+                                unsigned int *  eoffsets,
+                                const KEY_T validBitMask)
     {
 
         unsigned int tid = (blockDim.x * blockDim.y * gridDim.x * blockIdx.y)
                 + (blockDim.x * blockDim.y * blockIdx.x)
                 + (blockDim.x * threadIdx.y) + threadIdx.x;
-        if (tid < lmerCount) {
+        if (tid < lmerCount)
+        {
             KEY_T lmer = lmerKeys[tid];
 
             VALUE_T lmerValue = lmerValues[tid];
             KEY_T prefix = (lmer & (validBitMask << 2)) >> 2;
             KEY_T suffix = (lmer & validBitMask);
             KEY_T lomask = 3;
+
             //prefix and suffix index must be less than kmer count
             //printf(" prefix = %llu, suffix = %llu ", prefix, suffix);
+
             VALUE_T prefixIndex = getHashValue(prefix, TK, TV, bucketSeed,
                     bucketCount);
             VALUE_T suffixIndex = getHashValue(suffix, TK, TV, bucketSeed,
@@ -459,6 +440,7 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
             KEY_T transitionFrom = ((lmer >> __popcll(validBitMask)) & lomask);
 
            // printf(" xto = %llu, xfrom = %llu ", transitionTo, transitionFrom);
+
             KEY_T to_index = (prefixIndex << 2) + transitionTo;
             KEY_T from_index = (suffixIndex << 2) + transitionFrom;
 
@@ -473,20 +455,23 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
                 // printf(" loffset = %u, eoffset = %u ", loffset, eoffset);
 
                 unsigned int lmerOffset = lmerOffsets[tid];
-                for (unsigned int i = 0; i < lmerValue; i++)
+                if (lmerOffset < lmerCount)
                 {
-                    ee[lmerOffset].eid =lmerOffset;
-                    ee[lmerOffset].v1 = prefixIndex;
-                    ee[lmerOffset].v2 = suffixIndex;
-                    // lmerOffset;
-                    ee[lmerOffset].s = lmerValues[lmerCount - 1]
-                            + lmerOffsets[lmerCount - 1];
+                    for (unsigned int i = 0; i < lmerValue; i++)
+                    {
+                        ee[lmerOffset].eid =lmerOffset;
+                        ee[lmerOffset].v1 = prefixIndex;
+                        ee[lmerOffset].v2 = suffixIndex;
+                        // lmerOffset;
+                        ee[lmerOffset].s = lmerValues[lmerCount - 1]
+                                + lmerOffsets[lmerCount - 1];
 
-                    l[loffset] = lmerOffset;
-                    e[eoffset] = lmerOffset;
-                    loffset++;
-                    eoffset++;
-                    lmerOffset++;
+                        l[loffset] = lmerOffset;
+                        e[eoffset] = lmerOffset;
+                        loffset++;
+                        eoffset++;
+                        lmerOffset++;
+                    }
                 }
             }
         }
@@ -546,7 +531,8 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
 
 # This is way too f'ing big!!!! ======================
-    mem_size = kmerCount * sys.getsizeof(np.uintc) * 4
+    # Update: mem_size is an arbitrary number because kmerCount was too small
+    mem_size = kmerCount * 4 # sys.getsizeof(np.uintc) * 4
 #     mem_size = kmerCount * sys.getsizeof(np.uintc)
 #     mem_size = kmerCount * 10
 # ====================================================
@@ -579,10 +565,11 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     np_d_ecount.get(d_estart)
 
     np_d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
-    d_lmerOffsets = np.zeros_like(np_d_lmerValues) #(sys.getsizeof(np.uintc) * 4 * kmerCount, dtype=np.uintc)
+    d_lmerOffsets = np.zeros_like(np_d_lmerValues, dtype=np.uintc)
     np_d_lmerValues = gpuarray.to_gpu(np_d_lmerValues)
     knl(np_d_lmerValues)
     np_d_lmerValues.get(d_lmerOffsets)
+
     ecount = []
     [ecount.append(l) for l in d_lmerOffsets]
     [ecount.append(v) for v in d_lmerValues]
@@ -590,7 +577,6 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     d_kmerKeys = np.array(d_kmerKeys, dtype=np.ulonglong)
 
-    struct_size = sys.getsizeof(np.ulonglong) + (4 * sys.getsizeof(np.uintc))
     # d_ev = {
     #     'vid': np.zeros(struct_size, dtype=np.ulonglong),
     #     'ep': np.zeros(struct_size, dtype=np.uintc),
@@ -605,15 +591,27 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     #     's': np.zeros(struct_size, dtype=np.uintc),
     #     'pad': np.zeros(struct_size, dtype=np.uintc)
     # }
-    d_ee = np.zeros(struct_size, dtype=[('eid',np.ulonglong), ('v1',np.uintc), ('v2',np.uintc), ('s',np.uintc), ('pad',np.uintc)])
-    d_ev = np.zeros(struct_size, dtype=[('vid',np.ulonglong), ('ep',np.uintc), ('ecount',np.uintc), ('lp',np.uintc), ('lcount',np.uintc)])
+
+
+# allocateMemory((void**) d_ev, sizeof(EulerVertex) * (kmerCount));
+# 	allocateMemory((void**) d_l, sizeof(unsigned int) * (*ecount));
+# 	allocateMemory((void**) d_e, sizeof(unsigned int) * (*ecount));
+# 	allocateMemory((void**) d_ee, sizeof(EulerEdge) * (*ecount));
+
+
+
+    d_ee = np.zeros(len(ecount), dtype=[('eid',np.ulonglong), ('v1',np.uintc), ('v2',np.uintc), ('s',np.uintc), ('pad',np.uintc)])
+    # d_ev = np.zeros(struct_size, dtype=[('vid',np.ulonglong), ('ep',np.uintc), ('ecount',np.uintc), ('lp',np.uintc), ('lcount',np.uintc)])
+    d_ev = np.zeros(kmerCount, dtype=[('vid', np.ulonglong), ('ep', np.uintc), ('ecount', np.uintc), ('lp', np.uintc), ('lcount', np.uintc)])
+
     d_ev = setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
                           bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart)
 
-    d_l = np.zeros(sys.getsizeof(np.uintc) * len(ecount), dtype=np.uintc)
-    d_e = np.zeros(sys.getsizeof(np.uintc) * len(ecount), dtype=np.uintc)
+    d_l = np.zeros(len(ecount), dtype=np.uintc)
+    d_e = np.zeros(len(ecount), dtype=np.uintc)
     d_lmerKeys = np.array(d_lmerKeys, dtype=np.ulonglong)
     d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
+
     d_ee, d_l, d_e = setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed,
                        bucketCount, d_l, d_e, d_ee, d_lstart, d_estart, valid_bitmask)
     module_logger.info('Finished construct_debruijn_graph_device.')

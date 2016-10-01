@@ -8,10 +8,13 @@ import pycuda.gpuarray as gpuarray
 from pycuda.tools import OccupancyRecord
 module_logger = logging.getLogger('eulercuda.pyencode')
 
+# ULONGLONG = 8
+# UINTC = 4
 
 def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     # module_logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
     module_logger.info("started encode_lmer_device.")
+    # readLength is total number of bases read.
     mod = SourceModule("""
     #include <stdio.h>
     typedef unsigned  long long KEY_T ;
@@ -50,22 +53,21 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
         const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
         KEY_T lmer=0;
 
-        read[tid]=buffer[rOffset + tid];
+        read[tid] = buffer[rOffset + tid];
 
         __syncthreads();
 
-        for (unsigned int i = 0; i < 8; i++)
-        { //calculate lmer
-            lmer= (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
+        for (unsigned int i = 0; i < 8; i++)    //calculate lmer
+        {
+            lmer = (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
                                     shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
                                     shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
                                     codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
         }
         lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
         // printf(" offset = %u, lmer = %llu ", (tid + rOffset),lmer);
-        lmers[rOffset+tid]=lmer;
+        lmers[rOffset + tid] = lmer;
 
-        __syncthreads();
     }
     """)
 
