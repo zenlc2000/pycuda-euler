@@ -40,7 +40,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
 
-    __global__ void encodeLmerDevice(	char  * buffer,
+    __global__ void encodeLmerDevice(	char  * read,
                 //    const unsigned int buffSize,
                 //    const unsigned int readLength,
                     KEY_PTR lmers,
@@ -48,12 +48,12 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                     )
     {
 
-        extern __shared__ char read[];
+       // extern __shared__ char read[];
         const unsigned int tid=threadIdx.x;
         const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
         KEY_T lmer=0;
 
-        read[tid] = buffer[rOffset + tid];
+      //  read[tid] = buffer[rOffset + tid];
 
         __syncthreads();
 
@@ -82,8 +82,8 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
                     np_d_lmers,
                     np.uintc(lmerLength),
                     block=block_dim,
-                    grid=grid_dim,
-                    shared=readLength + 31)
+                    grid=grid_dim) #,
+                  #  shared=48000)
         np_d_lmers.get(d_lmers)
     else:
         print(isinstance(buffer, np.ndarray), isinstance(d_lmers, np.ndarray))
@@ -166,7 +166,7 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
     typedef KEY_T * KEY_PTR ;
 
     __global__ void encodeLmerComplementDevice(
-            char  * buffer,
+            char  * dnaRead,
             KEY_PTR lmers,
             const unsigned int lmerLength,
             const unsigned int readCount
@@ -180,13 +180,13 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
         if (tid < readCount)
         {
      
-            extern __shared__ char dnaRead[];
+          //  extern __shared__ char dnaRead[];
             //unsigned int lmerLength = 0;
             KEY_T lmer = 0;
             KEY_T temp = 0;
     
            // lmerLength = d_lmerLength[tid];
-            dnaRead[tid] = buffer[row + tid];
+           // dnaRead[tid] = buffer[row + tid];
     
             __syncthreads();
     
@@ -202,7 +202,7 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
             __syncthreads();
         }
     }
-    """, options=['--compiler-options', '-Wall'])
+    """)
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
     block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
@@ -214,7 +214,7 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
         module_logger.info("Going to GPU.")
         encode_lmer_complement(
             drv.In(buffer),  np_d_lmers, np_lmerLength, np.uintc(readCount),
-            block=block_dim, grid=grid_dim,  shared=readLength + 31
+            block=block_dim, grid=grid_dim
         )
         np_d_lmers.get(d_lmers)
     else:
