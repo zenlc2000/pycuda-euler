@@ -49,8 +49,10 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     {
 
        // extern __shared__ char read[];
-        const unsigned int tid=threadIdx.x;
+      //  const unsigned int tid=threadIdx.x;
         const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
+        const unsigned int tid = rOffset + threadIdx.x;
+
         KEY_T lmer=0;
 
       //  read[tid] = buffer[rOffset + tid];
@@ -59,21 +61,22 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
 
         for (unsigned int i = 0; i < 8; i++)    //calculate lmer
         {
-            lmer = (lmer<< 8) |	((KEY_T)(shifter[codeF[read[threadIdx.x+i*4]& 0x07]][3] |
-                                    shifter[codeF[read[threadIdx.x+i*4+1]& 0x07]][2] |
-                                    shifter[codeF[read[threadIdx.x+i*4+2]& 0x07]][1] |
-                                    codeF[read[threadIdx.x+i*4+3] & 0x07]) ) ;
+            lmer = (lmer<< 8) |	((KEY_T)(shifter[codeF[read[tid + i * 4]& 0x07]][3] |
+                                    shifter[codeF[read[tid + i * 4 + 1]& 0x07]][2] |
+                                    shifter[codeF[read[tid + i * 4 + 2]& 0x07]][1] |
+                                    codeF[read[tid + i * 4 + 3] & 0x07]) ) ;
         }
         lmer = (lmer >> ((32 - lmerLength) << 1)) & lmerMask[lmerLength-1];
         // printf(" offset = %u, lmer = %llu ", (tid + rOffset),lmer);
-        lmers[rOffset + tid] = lmer;
+        //lmers[rOffset + tid] = lmer;
+        lmers[tid] = lmer;
 
     }
     """)
 
     encode_lmer = mod.get_function("encodeLmerDevice")
 
-    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, lmerLength)
     module_logger.debug("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         module_logger.info("Going to GPU.")

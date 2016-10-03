@@ -114,7 +114,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
 
     # while readProcessed < total_base_pairs:
     d_lmers = enc.encode_lmer_device(buffer, readCount, d_lmers, readLength, lmerLength)
-    # lmers = [d for d in d_lmers.tolist() if d > 0]
+    # unique_lmers = set(d_lmers.tolist())
     # hits, misses = verify_kmers(readBuffer.decode('ascii'), d_lmers, lmerLength)
     d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
     # pkmers = [d for d in d_pkmers.tolist() if d > 0]
@@ -125,9 +125,6 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
 
     d_lmers = enc.compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength)
     d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
-    # lmers = [d for d in d_lmers.tolist() if d > 0]
-    # pkmers = [d for d in d_pkmers.tolist() if d > 0]
-    # skmers = [d for d in d_skmers.tolist() if d > 0]
     h_lmersR = np.array(d_lmers)
     h_pkmersR = np.array(d_pkmers)
     h_skmersR = np.array(d_skmers)
@@ -136,7 +133,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
     validLmerCount = readLength - lmerLength + 1
     # Here he fills the kmerMap and lmerMap with a nested for loop
 
-    for index in range(nbr_values):
+    for index in range(h_lmersF.size):
         # index = j * readLength + i
         kmerMap[h_pkmersF[index]] = 1
         kmerMap[h_skmersF[index]] = 1
