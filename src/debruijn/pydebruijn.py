@@ -513,7 +513,7 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
 
 
 def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerKeys, kmerCount, l,
-                                    d_TK, d_TV, d_bucketSeed, bucketCount, d_ev, d_l, d_e, d_ee,
+                                    d_TK, d_TV, d_bucketSize, bucketCount, d_ev, d_l, d_e, d_ee,
                                     readLength, readCount):
     """
 
@@ -545,8 +545,8 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     # kernel call
 
-    d_lcount, d_ecount = debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSeed, bucketCount,
-                          d_lcount, d_ecount, valid_bitmask, readLength, readCount)
+    d_lcount, d_ecount = debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
+                                               d_lcount, d_ecount, valid_bitmask, readLength, readCount)
 
     #  we need to perform pre-fix scan on , lcount, ecount, lmerValues,
     #  lcount and ecount has equal number of elements ,4*kmercount
@@ -604,16 +604,16 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     # d_ev = np.zeros(struct_size, dtype=[('vid',np.ulonglong), ('ep',np.uintc), ('ecount',np.uintc), ('lp',np.uintc), ('lcount',np.uintc)])
     d_ev = np.zeros(kmerCount, dtype=[('vid', np.ulonglong), ('ep', np.uintc), ('ecount', np.uintc), ('lp', np.uintc), ('lcount', np.uintc)])
 
-    d_ev = setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
-                          bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart)
+    d_ev = setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSize,
+                                 bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart)
 
     d_l = np.zeros(len(ecount), dtype=np.uintc)
     d_e = np.zeros(len(ecount), dtype=np.uintc)
     d_lmerKeys = np.array(d_lmerKeys, dtype=np.ulonglong)
     d_lmerValues = np.array(d_lmerValues, dtype=np.uintc)
 
-    d_ee, d_l, d_e = setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSeed,
-                       bucketCount, d_l, d_e, d_ee, d_lstart, d_estart, valid_bitmask)
+    d_ee, d_l, d_e = setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK, d_TV, d_bucketSize,
+                                        bucketCount, d_l, d_e, d_ee, d_lstart, d_estart, valid_bitmask)
     module_logger.info('Finished construct_debruijn_graph_device.')
     return d_ee, d_ev, d_l, d_e, kmerCount, len(ecount)
 

@@ -1,7 +1,7 @@
 import collections, sys
 import time
 # from Bio import Seq, SeqIO, SeqRecord
-from fastareader.parse_fasta import Fasta
+#from fastareader.parse_fasta import Fasta
 from dask import delayed
 
 def twin(km):
@@ -22,13 +22,8 @@ def bw(km):
         yield x + km[:-1]
 
 
-def build(fn,k=31,limit=1):
+def build(reads,k=31,limit=1):
     d = collections.defaultdict(int)
-    buffer = Fasta(open(fn))
-    reads = [s.sequence for s in buffer]
-
-#    for f in fn:
-#     reads = SeqIO.parse(fn,'fasta')
     for read in reads:
         #seq_s = str(read.seq)
         seq_l = read.split('N')
@@ -44,7 +39,7 @@ def build(fn,k=31,limit=1):
         del d[x]
     # for key, value in d.items():
     #     print(key, value)
-    return d
+    return dict(d)
 
 def contig_to_string(c):
     return c[0] + ''.join(x[-1] for x in c[1:])
