@@ -13,7 +13,7 @@ module_logger = logging.getLogger('eulercuda.pydebruijn')
 # UINTC = 4
 
 def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
-                          d_lcount, d_ecount, valid_bitmask, readLength, readCount):
+                          d_lcount, d_ecount, valid_bitmask, readLength):
     """
 
     This kernel works on each l-mer, calculating the entering edges (ecount) and leaving edges (lcount) of the graph
@@ -251,7 +251,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
         }
         else
         {
-            printf(" miss = %llu ", key);
+            printf(" vertex hash miss = %llu ", key);
             return MAX_INT;
         }
     }
@@ -514,7 +514,7 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
 
 def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerKeys, kmerCount, l,
                                     d_TK, d_TV, d_bucketSize, bucketCount, d_ev, d_l, d_e, d_ee,
-                                    readLength, readCount):
+                                    readLength):
     """
 
     :return:
@@ -536,7 +536,7 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 #     mem_size = kmerCount * sys.getsizeof(np.uintc)
 #     mem_size = kmerCount * 10
 # ====================================================
-
+    print('mem_size = ' + str(mem_size))
     d_lcount = np.zeros(mem_size, dtype=np.uintc)
 
     d_ecount = np.zeros_like(d_lcount)
@@ -546,8 +546,9 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     # kernel call
 
     d_lcount, d_ecount = debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_bucketSize, bucketCount,
-                                               d_lcount, d_ecount, valid_bitmask, readLength, readCount)
-
+                                               d_lcount, d_ecount, valid_bitmask, readLength)
+    # [print(x) for x in d_lcount]
+    # [print(x) for x in d_ecount]
     #  we need to perform pre-fix scan on , lcount, ecount, lmerValues,
     #  lcount and ecount has equal number of elements ,4*kmercount
     #  lmer has lmerCount elements, choose whichever is larger
@@ -606,7 +607,7 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
 
     d_ev = setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSize,
                                  bucketCount, d_ev, d_lcount, d_lstart, d_ecount, d_estart)
-
+    print(d_ev)
     d_l = np.zeros(len(ecount), dtype=np.uintc)
     d_e = np.zeros(len(ecount), dtype=np.uintc)
     d_lmerKeys = np.array(d_lmerKeys, dtype=np.ulonglong)

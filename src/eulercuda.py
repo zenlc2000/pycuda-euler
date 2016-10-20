@@ -1,5 +1,8 @@
 import os
 import argparse
+
+from bokeh.io import output_file
+
 import encoder.pyencode as enc
 import debruijn.pydebruijn as db
 import gpuhash.pygpuhash as gh
@@ -67,16 +70,16 @@ def verify_kmers(buffer, encoded_list, length):
     return hits, misses
 
 
-def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
+def readLmersKmersCuda(readBuffer, readLength, partitionReadCount, lmerLength, lmerKeys, lmerValues, lmerCount, kmerKeys,
                        kmerValues, kmerCount, numReads):
     """
 
     """
     # logger = logging.getLogger(__name__)
-    logger.info("started readLmersKmersCuda.")
+    #logger.info("started readLmersKmersCuda.")
     kmerMap = {}
     lmerMap = {}
-
+    print("readLmersKmersCuda partitionReadCount = " + str(partitionReadCount))
     # numpy type 'S' == Python-compatible string
     # numpy type 'Q' == C unsigned long long
     # numpu type 'I' == C unsigned int
@@ -88,13 +91,13 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
     buffer = np.array(readBuffer).astype('S')
     # nbr_values = buffer.size * buffer.dtype.itemsize
     nbr_values = (readLength - lmerLength + 1) *  numReads
-    d_lmers = np.zeros(len(readBuffer)).astype('Q')
+    d_lmers = np.zeros(partitionReadCount).astype('Q')
     d_pkmers = np.zeros_like(d_lmers)
     d_skmers = np.zeros_like(d_lmers)
 
     CUDA_NUM_READS = 1024 * 32
-    if readCount < CUDA_NUM_READS:
-        readToProcess = readCount
+    if partitionReadCount < CUDA_NUM_READS:
+        readToProcess = partitionReadCount
     else:
         readToProcess = CUDA_NUM_READS
     # readToProcess = readCount
@@ -106,25 +109,25 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
 
     for _ in range(0, (lmerLength - 1) * 2):
         kmerBitMask = (kmerBitMask << 1) | 1
-    logger.debug("kmerBitMask = %s" % kmerBitMask)
+    #logger.debug("kmerBitMask = %s" % kmerBitMask)
 
     readProcessed = 0
     # Originally a loop slicing readBuffer into chunks then process each chunk
     # Theoretically shouldn't have to do this on distrib. system.
 
     # while readProcessed < total_base_pairs:
-    d_lmers = enc.encode_lmer_device(buffer, readCount, d_lmers, readLength, lmerLength)
+    d_lmers = enc.encode_lmer_device(buffer, partitionReadCount, d_lmers, readLength, lmerLength)
     # unique_lmers = set(d_lmers.tolist())
     # hits, misses = verify_kmers(readBuffer.decode('ascii'), d_lmers, lmerLength)
-    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
+    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, partitionReadCount)
     # pkmers = [d for d in d_pkmers.tolist() if d > 0]
     # skmers = [d for d in d_skmers.tolist() if d > 0]
     h_lmersF = np.array(d_lmers)
     h_pkmersF = np.array(d_pkmers)
     h_skmersF = np.array(d_skmers)
 
-    d_lmers = enc.compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength)
-    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, readCount)
+    d_lmers = enc.compute_lmer_complement_device(buffer, partitionReadCount, d_lmers, readLength, lmerLength)
+    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, partitionReadCount)
     h_lmersR = np.array(d_lmers)
     h_pkmersR = np.array(d_pkmers)
     h_skmersR = np.array(d_skmers)
@@ -156,7 +159,7 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
                 lmerMap[h_lmersR[index]] += 1
 
     kmerCount = len(kmerMap) + kmerEmpty
-    logger.info('kmer count = %d' % kmerCount)
+    #logger.info('kmer count = %d' % kmerCount)
 
     index = 0
     for k, v in kmerMap.items():
@@ -171,11 +174,11 @@ def readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, lmerKeys, 
     if lmerEmpty > 0:
         lmerKeys[len(lmerMap) - 1] = 0
         lmerValues[len(lmerMap) - 1] = lmerEmpty
-    logger.info('Finished.')
+    #logger.info('Finished.')
     return [lmerCount, kmerCount, lmerKeys, lmerValues, kmerKeys, kmerValues]
 
 
-def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList,numReads):
+def constructDebruijnGraph(readBuffer, partitionReadCount, readLength, lmerLength, evList, eeList, levEdgeList, entEdgeList, numReads):
     """
     ///variables
 
@@ -227,7 +230,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     d_levEdge = []
     d_entEdge = []
 
-    vals = readLmersKmersCuda(readBuffer, readLength, readCount, lmerLength, h_lmerKeys, h_lmerValues,
+    vals = readLmersKmersCuda(readBuffer, readLength, partitionReadCount, lmerLength, h_lmerKeys, h_lmerValues,
                               lmerCount, h_kmerKeys, h_kmerValues, kmerCount, numReads)
 
     lmerCount = vals[0]
@@ -240,7 +243,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
     # check_kmers('readLmersKmers.tsv', lmerLength, h_lmerKeys)
 
     logger.debug('lmerCount = %d' % lmerCount)
-    logger.debug('projected kmer count: %s, actual: %s' % ((readCount * (readLength - lmerLength)), kmerCount))
+    logger.debug('projected kmer count: %s, actual: %s' % ((partitionReadCount * (readLength - lmerLength)), kmerCount))
     results = gh.create_hash_table_device(h_kmerKeys, h_kmerValues, kmerCount, d_TK, d_TV, tableLength,
                                           d_bucketSize, bucketCount)
 
@@ -252,7 +255,7 @@ def constructDebruijnGraph(readBuffer, readCount, readLength, lmerLength, evList
 
     d_ev, d_ee, d_levEdge, d_entEdge, kmerCount, edgeCount = \
         db.construct_debruijn_graph_device(h_lmerKeys, h_lmerValues, lmerCount, h_kmerKeys, kmerCount, lmerLength,
-        d_TK, d_TV, d_bucketSize, bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, readLength, readCount)
+                                           d_TK, d_TV, d_bucketSize, bucketCount, d_ev, d_levEdge, d_entEdge, d_ee, readLength)
     logger.info("Finished constructDebruijnGraph. Leaving")
     return d_ev, d_ee, d_levEdge, d_entEdge, kmerCount, edgeCount
 
@@ -338,6 +341,7 @@ def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
     count = 0
     edgeCount = 0
     next = 0
+    output = []
 
     with open(outfile, 'w') as ofile:
         for i in range(ecount):
@@ -363,6 +367,7 @@ def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
                     h_visited[next] = 1
                     edgeCount += 1
                 ofile.write(''.join(buffer) + '\n')
+                output.append(buffer)
                 buffer = []
 
         for i in range(ecount):
@@ -388,8 +393,10 @@ def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
                     h_visited[next] = 1
                     edgeCount += 1
                 ofile.write(''.join(buffer) + '\n')
+                output.append(buffer)
                 buffer = []
     logger.info("Finished")
+    return output
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
@@ -413,13 +420,14 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
 
     cg_edge, cg_edgeCount, cg_vertexCount = et.findEulerDevice(
         d_ev, d_levEdge, d_entEdge, vertexCount, d_ee, edgeCountList, d_cg_edge,
-        cg_edgeCount, cg_vertexCount, kmerLength)
+        cg_edgeCount, cg_vertexCount)
     vertexCount, edgeCount = cg_vertexCount, cg_edgeCount
     if cg_edgeCount > 0:
         tree = findSpanningTree(cg_edge, cg_edgeCount, cg_vertexCount)
         d_ee = et.executeSwipeDevice(d_ev, d_entEdge, vertexCount, d_ee, edgeCount, cg_edge, cg_edgeCount, tree, len(tree))
-        generatePartialContig(outfile, d_ev, vertexCount, d_ee, edgeCount, lmerLength)
+        outstrings = generatePartialContig(outfile, d_ev, vertexCount, d_ee, edgeCount, lmerLength)
     logger.info("finished")
+    return outstrings
 
 
 def read_fasta(infilename):
@@ -433,7 +441,7 @@ def read_fasta(infilename):
     return sequence
 
 
-def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple_size):
+def assemble2( lmerLength, buffer = '', readLength=0, readCount=0, infile='', outfile=''):
     """
     Do the assemble
     """
@@ -451,18 +459,18 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     # unsigned int 	readCount=0;
     logger.info('Opening %s' % infile)
 
-    extension = infile.split('.')[-1]
-    # buffer = Fasta(open(infile))
-    # readBuffer = [s.sequence for s in buffer if len(s.sequence) >= lmerLength]
-    # readBuffer = list(''.join(readBuffer))
-    if extension in ['fa', 'fasta', 'fsa']:
-        buffer = read_fasta(infile)
-    elif extension in ['fq', 'fastq']:
-        buffer = read_fastq(infile)
+    if infile != '':
+        extension = infile.split('.')[-1]
+        # buffer = Fasta(open(infile))
+        # readBuffer = [s.sequence for s in buffer if len(s.sequence) >= lmerLength]
+        # readBuffer = list(''.join(readBuffer))
+        if extension in ['fa', 'fasta', 'fsa']:
+            buffer = read_fasta(infile)
+        elif extension in ['fq', 'fastq']:
+            buffer = read_fastq(infile)
+        readCount = len(buffer)
+        readLength = len(buffer[0])
 
-
-    readCount = len(buffer)
-    readLength = len(buffer[0])
     # cull out the shorties
     # buffer = [r for r in buffer if len(r) == readLength]
     # readCount = len(buffer)
@@ -471,7 +479,7 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     # found out original C buffer was one long string
     readBuffer = ''.join(buffer).encode('ascii')
     baseCount = len(readBuffer)
-
+    print('baseCount = ', baseCount)
     # total_base_pairs = readCount * readLength
     evList = []
     eeList = []
@@ -482,14 +490,14 @@ def assemble2(infile, outfile, lmerLength, errorCorrection, max_ec_pos, ec_tuple
     vertexCount = 0
 
     if baseCount > 0:
-        if errorCorrection:
-            baseCount = doErrorCorrection(buffer, ec_tuple_size, max_ec_pos)
         eeList, evList, levEdgeList, entEdgeList, vertexCount, edgeCount = constructDebruijnGraph(readBuffer, baseCount, readLength,
                                lmerLength, evList, eeList, levEdgeList, entEdgeList, readCount)
         verts = [ev['vid'] for ev in evList]
         check_kmers('constructGraph.tsv', lmerLength, verts)
-        findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile)
-
+        if outfile == '':
+            outfile = 'temp_output.txt'
+        contigs_out = findEulerTour(evList, eeList, levEdgeList, entEdgeList, edgeCount, vertexCount, lmerLength, outfile)
+    return contigs_out
 
 if __name__ == '__main__':
     """
@@ -516,7 +524,9 @@ if __name__ == '__main__':
         kmerLength = results.k
     else:
         kmerLength = 21
-    # readBuffer = read_fastq(fname)
+
+
+    readBuffer = ''
     # assemble2(inputFileName, outputFileName, readLength, assemble,
     # lmerLength, coverage,errorCorrection, max_ec_pos,ec_tuple_size);
 
@@ -531,4 +541,4 @@ if __name__ == '__main__':
     # 		unsigned int ec_tuple_size	//ec tuple size
     # 		){
 
-    assemble2(results.input_filename, results.output_filename, kmerLength, False, 20, 20)
+    assemble2( kmerLength,readBuffer, infile=results.input_filename, outfile=results.output_filename)

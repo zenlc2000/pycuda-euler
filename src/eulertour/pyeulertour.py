@@ -711,7 +711,7 @@ def identify_contig_start(d_ee, d_contigStart, ecount):
 
 
 
-def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vertexCount, kmerLength):
+def findEulerDevice(d_ev, d_l, d_e, vcount, d_ee, ecount, d_cg_edge, cg_edgeCount, cg_vertexCount):
     """
 
     :param d_ev:

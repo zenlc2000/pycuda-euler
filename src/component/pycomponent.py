@@ -8,7 +8,7 @@ from pycuda.compiler import SourceModule
 import ctypes
 import logging
 
-from pyencode import getOptimalLaunchConfiguration
+import encoder.pyencode as enc
 
 # ULONGLONG = 8
 # UINTC = 4
@@ -43,7 +43,7 @@ def component_step_init(d_v, d_D, d_Q, length):
     }
     """)
     component_step_init_device = mod.get_function('componentStepInit')
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     np_d_D = gpuarray.to_gpu(d_D)
     np_d_Q = gpuarray.to_gpu(d_Q)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
@@ -95,7 +95,7 @@ def component_step1_shortcutting_p1(d_v, d_prevD, d_D, d_Q, length, s):
 
      """)
 
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_v = gpuarray.to_gpu(d_v)
     np_d_D = gpuarray.to_gpu(d_D)
@@ -157,7 +157,7 @@ def component_step1_shortcutting_p2(d_v, d_prevD, d_D, d_Q, length, s):
         }
     }
        """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_v = gpuarray.to_gpu(d_v)
     np_d_D = gpuarray.to_gpu(d_D)
@@ -242,7 +242,7 @@ def component_Step2_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     }
 
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_t1 = gpuarray.to_gpu(d_t1)
     np_d_t2 = gpuarray.to_gpu(d_t2)
@@ -330,7 +330,7 @@ def component_Step2_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
     }
 
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_D = gpuarray.to_gpu(d_D)
     np_d_Q = gpuarray.to_gpu(d_Q)
@@ -415,7 +415,7 @@ def component_Step3_P1(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
 
 
         """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_t1 = gpuarray.to_gpu(d_t1)
     np_d_t2 = gpuarray.to_gpu(d_t2)
@@ -493,7 +493,7 @@ def component_Step3_P2(d_v, d_prevD, d_D, d_Q, d_t1, d_val1, d_t2, d_val2, lengt
         }
     }
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_D = gpuarray.to_gpu(d_D)
     np_d_t1 = gpuarray.to_gpu(d_t1)
@@ -553,7 +553,7 @@ def component_step4_P1(d_v, d_D, d_val1, length):
     }
 
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_val1 = gpuarray.to_gpu(d_val1)
     step4_P1 = mod.get_function('componentStepFourP1')
@@ -600,7 +600,7 @@ def component_step4_P2(d_v, d_D, d_val1, length):
 
     }
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_val1 = gpuarray.to_gpu(d_val1)
     np_d_D = gpuarray.to_gpu(d_D)
@@ -645,7 +645,7 @@ def component_step5(d_Q,length,d_sptemp,s):
         }
     }
     """)
-    block_dim, grid_dim = getOptimalLaunchConfiguration(length, 512)
+    block_dim, grid_dim = enc.getOptimalLaunchConfiguration(length, 512)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     np_d_sptemp = gpuarray.to_gpu(d_sptemp)
     step5 = mod.get_function('componentStepFive')
