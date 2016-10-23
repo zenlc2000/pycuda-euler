@@ -54,11 +54,15 @@ def phase1_device(d_keys, d_offset, d_length, count, bucketCount):
     keys_gpu = gpuarray.to_gpu(np_d_keys)
     offset_gpu = gpuarray.zeros(len(d_keys), dtype='I')
     count_gpu = gpuarray.to_gpu(count)
-    block_dim = (1024, 1, 1)
-    if (d_length//1024) == 0:
-        grid_dim = (1, 1, 1)
-    else:
-        grid_dim = (d_length//1024, 1, 1)
+    # block_dim = (1024, 1, 1)
+    # if (d_length//1024) == 0:
+    #     grid_dim = (1, 1, 1)
+    # else:
+    #     grid_dim = (d_length//1024, 1, 1)
+
+    # Below conforms more closely to original C
+    block_dim=(512,1,1)
+    grid_dim=(512//d_length + 1,1,1)
     phase1 = mod.get_function("phase1")
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     phase1(keys_gpu, offset_gpu, np.uintc(d_length), count_gpu,
@@ -77,7 +81,7 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     logger = logging.getLogger('eulercuda.pygpuhash.copy_to_bucket_device')
     logger.info("started.")
     mod = SourceModule("""
-   // #include <stdio.h>
+    #include <stdio.h>
     //typedef unsigned long long  KEY_T ;
     //typedef KEY_T               *KEY_PTR;
     //typedef unsigned int        VALUE_T;
@@ -114,7 +118,7 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
             unsigned int value = values[tid];
             unsigned int index = start[bucket] + offset[tid];
 
-           // printf(" index = %u ", index);
+            printf(" index = %u ", index);
            // printf(" tid = %u, offset = %u bucket = %u start = %u index = %u ", tid, offset[tid], bucket, start[bucket], (start[bucket] + offset[tid]));
 
             bufferK[index] = key;
@@ -140,11 +144,15 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
     # start_gpu = gpuarray.to_gpu(np_d_start)
     np_d_bufferK = gpuarray.to_gpu(d_bufferK)
     np_d_bufferV = gpuarray.to_gpu(d_bufferV)
-    block_dim = (1024, 1, 1)
-    if (d_length//1024) == 0:
-        grid_dim = (1, 1, 1)
-    else:
-        grid_dim = (d_length//1024, 1, 1)
+    # block_dim = (1024, 1, 1)
+    # if (d_length//1024) == 0:
+    #     grid_dim = (1, 1, 1)
+    # else:
+    #     grid_dim = (d_length//1024, 1, 1)
+
+    # Below conforms more closely to original C
+    block_dim = (512, 1, 1)
+    grid_dim = (512//d_length + 1, 1, 1)
     logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     copy_to_bucket(
         keys_gpu,
@@ -155,8 +163,8 @@ def copy_to_bucket_device(d_keys, d_values, d_offset, d_length, d_start, bucketC
         np.uintc(bucketCount),
         np_d_bufferK, #bufferK_gpu,
         np_d_bufferV, #bufferV_gpu,
-        grid = grid_dim,
-        block = block_dim
+        grid=grid_dim,
+        block=block_dim
     )
     # devdata = pycuda.tools.DeviceData()
     # orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
@@ -174,6 +182,7 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
     logger = logging.getLogger('eulercuda.pygpuhash.bucket_sort_device')
     logger.info("started.")
     mod = SourceModule("""
+    #include <stdio.h>
     typedef unsigned long long  KEY_T ;
     typedef KEY_T               *KEY_PTR;
     typedef unsigned int        VALUE_T;
@@ -226,6 +235,7 @@ def bucket_sort_device(d_bufferK, d_bufferV, d_start, d_bucketSize, bucketCount,
             {
                 TK[GET_KEY_INDEX(blockIdx.x, keyCount[j])] = keys[(j << 5) + threadIdx.x];
                 TV[GET_VALUE_INDEX(blockIdx.x, keyCount[j])] = bufferV[blockOffset + (j << 5) + threadIdx.x];
+                printf(" key = %llu ",  keys[(j << 5) + threadIdx.x]);
             }
         }
     }

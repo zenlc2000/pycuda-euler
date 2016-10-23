@@ -13,6 +13,8 @@ import logging.config
 import pycuda.driver
 from graph_tool.all import *
 import collections
+from itertools import chain
+
 
 pycuda.driver.set_debugging(True)
 
@@ -91,9 +93,9 @@ def readLmersKmersCuda(readBuffer, readLength, partitionReadCount, lmerLength, l
     buffer = np.array(readBuffer).astype('S')
     # nbr_values = buffer.size * buffer.dtype.itemsize
     nbr_values = (readLength - lmerLength + 1) *  numReads
-    d_lmers = np.zeros(partitionReadCount).astype('Q')
-    d_pkmers = np.zeros_like(d_lmers)
-    d_skmers = np.zeros_like(d_lmers)
+    # d_lmers = np.zeros(partitionReadCount).astype('Q')
+    # d_pkmers = np.zeros_like(d_lmers)
+    # d_skmers = np.zeros_like(d_lmers)
 
     CUDA_NUM_READS = 1024 * 32
     if partitionReadCount < CUDA_NUM_READS:
@@ -116,25 +118,32 @@ def readLmersKmersCuda(readBuffer, readLength, partitionReadCount, lmerLength, l
     # Theoretically shouldn't have to do this on distrib. system.
 
     # while readProcessed < total_base_pairs:
-    d_lmers = enc.encode_lmer_device(buffer, partitionReadCount, d_lmers, readLength, lmerLength)
-    # unique_lmers = set(d_lmers.tolist())
-    # hits, misses = verify_kmers(readBuffer.decode('ascii'), d_lmers, lmerLength)
-    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, partitionReadCount)
-    # pkmers = [d for d in d_pkmers.tolist() if d > 0]
-    # skmers = [d for d in d_skmers.tolist() if d > 0]
-    h_lmersF = np.array(d_lmers)
-    h_pkmersF = np.array(d_pkmers)
-    h_skmersF = np.array(d_skmers)
+    d_lmersF = enc.encode_lmer_device(buffer, partitionReadCount, readLength, lmerLength)
+    d_pkmersF, d_skmersF = enc.compute_kmer_device(d_lmersF, kmerBitMask, readLength, partitionReadCount)
+    h_lmersF = np.array(d_lmersF)
+    # check_kmers('forward.out', 18, h_lmersF)
+    h_pkmersF = np.array(d_pkmersF)
+    h_skmersF = np.array(d_skmersF)
 
-    d_lmers = enc.compute_lmer_complement_device(buffer, partitionReadCount, d_lmers, readLength, lmerLength)
-    d_pkmers, d_skmers = enc.compute_kmer_device(d_lmers, d_pkmers, d_skmers, kmerBitMask, readLength, partitionReadCount)
-    h_lmersR = np.array(d_lmers)
-    h_pkmersR = np.array(d_pkmers)
-    h_skmersR = np.array(d_skmers)
+    d_lmersR = enc.compute_lmer_complement_device(buffer, partitionReadCount, readLength, lmerLength)
+    d_pkmersR, d_skmersR = enc.compute_kmer_device(d_lmersR, kmerBitMask, readLength, partitionReadCount)
+    h_lmersR = np.array(d_lmersR)
+    # check_kmers('reverse.out', 18, h_lmersR)
+    h_pkmersR = np.array(d_pkmersR)
+    h_skmersR = np.array(d_skmersR)
 
     lmerEmpty, kmerEmpty = 0, 0
     validLmerCount = readLength - lmerLength + 1
     # Here he fills the kmerMap and lmerMap with a nested for loop
+
+    # pf_dict = {pkmerF: 1 for pkmerF in h_pkmersF}
+    # sf_dict = {skmerF: 1 for skmerF in h_skmersF}
+    # pr_dict = {pkmerR: 1 for pkmerR in h_pkmersR}
+    # sr_dict = {skmerR: 1 for skmerR in h_skmersR}
+    #
+    # p_dict = dict(chain(pf_dict.items(), pr_dict.items()))
+    # s_dict = dict(chain(sf_dict.items(), sr_dict.items()))
+    # kmerMap = dict(chain(p_dict.items(), s_dict.items()))
 
     for index in range(h_lmersF.size):
         # index = j * readLength + i

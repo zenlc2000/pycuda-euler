@@ -153,7 +153,7 @@ def debruijn_count_device(d_lmerKeys, d_lmerValues, lmerCount, d_TK, d_TV, d_buc
     mem_size = d_lcount.size
     debruijn_count = mod.get_function("debruijnCount")
     block_dim, grid_dim = getOptimalLaunchConfiguration(lmerCount,512)
-    module_logger.debug('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    module_logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     debruijn_count(
         drv.In(d_lmerKeys),
         drv.In(d_lmerValues),
@@ -232,9 +232,12 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
         unsigned int l = 0;
         unsigned int r = bucketSize[bucket];
         unsigned int mid;
-        while(l < r)
+        KEY_T tk_key;
+        while(l < r && TK[GET_KEY_INDEX(bucket, l)] != key)
         {
+
             mid = l + ((r - l) / 2);
+            tk_key = TK[GET_KEY_INDEX(bucket, mid)];
             if( TK[GET_KEY_INDEX(bucket, mid)] <  key)
             {
                 l = mid + 1;
@@ -243,6 +246,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
             {
                 r = mid;
             }
+           // l++; // for linear search. take out if above is uncommented.
         }
         if(l < bucketSize[bucket] && TK[GET_KEY_INDEX(bucket, l)] == key)
         {
@@ -251,7 +255,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
         }
         else
         {
-            printf(" vertex hash miss = %llu ", key);
+            printf(" (%llu, %llu); ", tk_key,key);
             return MAX_INT;
         }
     }
@@ -299,7 +303,7 @@ def setup_vertices_device(d_kmerKeys, kmerCount, d_TK, d_TV, d_bucketSeed,
     block_dim, grid_dim = getOptimalLaunchConfiguration(kmerCount, 512)
     mem_size = d_ev.size
     np_d_ev = gpuarray.to_gpu(d_ev)
-    module_logger.debug('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    module_logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     setup_vertices(
         drv.In(d_kmerKeys),
         np.uintc(kmerCount),
@@ -484,7 +488,7 @@ def setup_edges_device(d_lmerKeys, d_lmerValues, d_lmerOffsets, lmerCount, d_TK,
     np_d_e = gpuarray.to_gpu(d_e)
     if d_lmerKeys.size < lmerCount:
         lmerCount = d_lmerKeys.size
-    module_logger.debug('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
+    module_logger.info('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     setup_edges(
         drv.In(d_lmerKeys),
         drv.In(d_lmerValues),
@@ -619,7 +623,27 @@ def construct_debruijn_graph_device(d_lmerKeys, d_lmerValues, lmerCount, d_kmerK
     return d_ee, d_ev, d_l, d_e, kmerCount, len(ecount)
 
 
-def getOptimalLaunchConfiguration(threadCount, threadPerBlock=32):
+# #define DEFAULT_BLOCK_SIZE 512
+
+# in C:
+# if (a > b) {
+#     result = x;
+# } else {
+#     result = y;
+# }
+# can be rewritten as
+# result = a > b ? x : y;
+#
+# in Python:
+# result = x if a > b else y
+
+# in GPU-Euler:
+# 		grid->y = (grid->y > 65535 ) ? 65535 : grid->y;
+#
+# Python:
+#       grid['y'] = 65535 if grid['y'] > 65535 else grid['y']
+
+def getOptimalLaunchConfiguration(threadCount, threadPerBlock=512):
     """
     :param threadCount:
     :param threadPerBlock:
@@ -633,8 +657,7 @@ def getOptimalLaunchConfiguration(threadCount, threadPerBlock=32):
         if threadCount % block['x'] > 0:
             grid['y'] += 1
         grid['x'] = grid['y'] // 65535 + 1
-        if grid['y'] > 65535:
-            grid['y'] = 65535
+        grid['y'] = 65535 if grid['y'] > 65535 else grid['y']
     block_dim = (block['x'], block['y'], block['z'])
     grid_dim = (grid['x'], grid['y'], grid['z'])
     return block_dim, grid_dim

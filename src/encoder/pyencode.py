@@ -11,7 +11,7 @@ module_logger = logging.getLogger('eulercuda.pyencode')
 # ULONGLONG = 8
 # UINTC = 4
 
-def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
+def encode_lmer_device (buffer, partitionReadCount, readLength, lmerLength):
     # module_logger = logging.getLogger('eulercuda.pyencode.encode_lmer_device')
     module_logger.info("started encode_lmer_device.")
     # readLength is total number of bases read.
@@ -75,8 +75,8 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     """)
 
     encode_lmer = mod.get_function("encodeLmerDevice")
-
-    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, lmerLength)
+    d_lmers = np.zeros(partitionReadCount).astype('Q')
+    block_dim, grid_dim = getOptimalLaunchConfiguration(partitionReadCount, lmerLength)
     module_logger.debug("block_dim = %s, grid_dim = %s" % (block_dim, grid_dim))
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         module_logger.info("Going to GPU.")
@@ -98,7 +98,7 @@ def encode_lmer_device (buffer, readCount, d_lmers, readLength, lmerLength):
     return d_lmers
 
 
-def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCount):
+def compute_kmer_device (lmers, kmerBitMask, readLength, partitionReadCount):
     # module_logger = logging.getLogger('eulercuda.pyencode.compute_kmer_device')
     module_logger.info("started compute_kmer_device.")
     mod = SourceModule("""
@@ -133,8 +133,9 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     }
     """, options=['--compiler-options', '-Wall'])
     compute_kmer = mod.get_function("computeKmerDevice")
-
-    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
+    pkmers = np.zeros_like(lmers)
+    skmers = np.zeros_like(lmers)
+    block_dim, grid_dim = getOptimalLaunchConfiguration(partitionReadCount, readLength)
     np_pkmers = gpuarray.to_gpu(pkmers)
     np_skmers = gpuarray.to_gpu(skmers)
     if isinstance(lmers, np.ndarray) and isinstance(pkmers, np.ndarray) and isinstance(skmers, np.ndarray):
@@ -144,7 +145,7 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
             np_pkmers,
             np_skmers,
             np.ulonglong(kmerBitMask),
-            np.uintc(readCount),
+            np.uintc(partitionReadCount),
             block=block_dim, grid=grid_dim
         )
         np_pkmers.get(pkmers)
@@ -155,69 +156,67 @@ def compute_kmer_device (lmers, pkmers, skmers, kmerBitMask, readLength, readCou
     orec = pycuda.tools.OccupancyRecord(devdata, block_dim[0] * grid_dim[0])
     module_logger.debug("Occupancy = %s" % (orec.occupancy * 100))
 
+    import collections
+    if collections.Counter(pkmers) == collections.Counter(skmers):
+        print('Fuck')
     module_logger.info("leaving compute_kmer_device.")
     return pkmers, skmers
 
 
-def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerLength):
+def compute_lmer_complement_device(buffer, partitionReadCount, readLength, lmerLength):
     # logger = logging.getLogger('eulercuda.pyencode.compute_lmer_complement_device')
     module_logger.info("started compute_lmer_complement_device.")
     mod = SourceModule("""
+    #include <stdio.h>
     __device__ __constant__ char  codeF[]={0,0,0,1,3,0,0,2};
     __device__ __constant__ char  codeR[]={0,3,0,2,0,0,0,1};
     typedef unsigned  long long KEY_T ;
     typedef KEY_T * KEY_PTR ;
 
-    __global__ void encodeLmerComplementDevice(
-            char  * dnaRead,
-            KEY_PTR lmers,
-            const unsigned int lmerLength,
-            const unsigned int readCount
-            )
+     __global__ void encodeLmerComplementDevice(	char  * buffer,
+                    const unsigned int buffSize,
+                    const unsigned int readLength,
+                    KEY_PTR lmers,
+                    const unsigned int lmerLength
+                    )
     {
-        const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        const unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
-     //   const unsigned int col = blockIdx.y + blockDim.y + threadIdx.y;
 
-        
-        if (tid < readCount)
+        extern  __shared__ char read[];//have to fix it
+        const unsigned int tid=threadIdx.x;
+        const unsigned int rOffset=(blockDim.x*blockDim.y*gridDim.x*blockIdx.y) +(blockDim.x*blockDim.y*blockIdx.x)+(blockDim.x*threadIdx.y);
+        KEY_T lmer=0;
+        KEY_T temp=0;
+
+        if ((tid + rOffset) < buffSize)
         {
-     
-          //  extern __shared__ char dnaRead[];
-            //unsigned int lmerLength = 0;
-            KEY_T lmer = 0;
-            KEY_T temp = 0;
-    
-           // lmerLength = d_lmerLength[tid];
-           // dnaRead[tid] = buffer[row + tid];
-    
+            read[tid]=buffer[rOffset+tid];
             __syncthreads();
-    
-            dnaRead[tid] = codeR[dnaRead[tid] & 0x07];
+            read[tid]=codeR[read[tid] & 0x07];
             __syncthreads();
-    
-            for (unsigned int i = 0; i < lmerLength; i++)
+            for(unsigned int i =0; i< lmerLength; i++)
             {
-                temp = ((KEY_T)dnaRead[(tid + i) % blockDim.x]);
-                lmer = (temp << (i << 1)) | lmer;
+                temp=((KEY_T)read[(tid+i)%blockDim.x]);
+                lmer = (temp<<(i<<1)) | lmer;
             }
-            lmers[row + tid] = lmer;
-            __syncthreads();
+            printf(" lmer = %llu, ", lmer);
+            lmers[rOffset+tid]=lmer;
         }
     }
+
     """)
 
     encode_lmer_complement = mod.get_function("encodeLmerComplementDevice")
-    block_dim, grid_dim = getOptimalLaunchConfiguration(readCount, readLength)
-
+    block_dim, grid_dim = getOptimalLaunchConfiguration(partitionReadCount, readLength)
+    d_lmers = np.zeros(partitionReadCount).astype('Q')
     module_logger.debug('block_dim = %s, grid_dim = %s' % (block_dim, grid_dim))
     if isinstance(buffer, np.ndarray) and isinstance(d_lmers, np.ndarray):
         np_lmerLength = np.uintc(lmerLength)
         np_d_lmers = gpuarray.to_gpu(d_lmers)
         module_logger.info("Going to GPU.")
         encode_lmer_complement(
-            drv.In(buffer),  np_d_lmers, np_lmerLength, np.uintc(readCount),
-            block=block_dim, grid=grid_dim
+            drv.In(buffer), np.uintc(partitionReadCount), np.uintc(readLength), np_d_lmers, np_lmerLength,
+            block=block_dim, grid=grid_dim,
+            shared=lmerLength
         )
         np_d_lmers.get(d_lmers)
     else:
@@ -234,7 +233,27 @@ def compute_lmer_complement_device(buffer, readCount, d_lmers, readLength, lmerL
 
 # getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
 
-def getOptimalLaunchConfiguration (threadCount, threadPerBlock):
+# #define DEFAULT_BLOCK_SIZE 512
+
+# in C:
+# if (a > b) {
+#     result = x;
+# } else {
+#     result = y;
+# }
+# can be rewritten as
+# result = a > b ? x : y;
+#
+# in Python:
+# result = x if a > b else y
+
+# in GPU-Euler:
+# 		grid->y = (grid->y > 65535 ) ? 65535 : grid->y;
+#
+# Python:
+#       grid['y'] = 65535 if grid['y'] > 65535 else grid['y']
+
+def getOptimalLaunchConfiguration(threadCount, threadPerBlock=512):
     """
     :param threadCount:
     :param threadPerBlock:
@@ -248,10 +267,35 @@ def getOptimalLaunchConfiguration (threadCount, threadPerBlock):
         if threadCount % block['x'] > 0:
             grid['y'] += 1
         grid['x'] = grid['y'] // 65535 + 1
-        if grid['y'] > 65535:
-            grid['y'] = 65535
+        grid['y'] = 65535 if grid['y'] > 65535 else grid['y']
     block_dim = (block['x'], block['y'], block['z'])
     grid_dim = (grid['x'], grid['y'], grid['z'])
     return block_dim, grid_dim
-# 	getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
+
+
+
+
+
+
+
+# def getOptimalLaunchConfiguration (threadCount, threadPerBlock=512):
+#     """
+#     :param threadCount:
+#     :param threadPerBlock:
+#     :return: block_dim, grid_dim - 3-tuples for block and grid x, y, and z
+#     """
+#     block = {'x': threadPerBlock, 'y': 1, 'z': 1}
+#     grid = {'x': 1, 'y': 1, 'z': 1}
+#
+#     if threadCount > block['x']:
+#         grid['y'] = threadCount // block['x']
+#         if threadCount % block['x'] > 0:
+#             grid['y'] += 1
+#         grid['x'] = grid['y'] // 65535 + 1
+#         if grid['y'] > 65535:
+#             grid['y'] = 65535
+#     block_dim = (block['x'], block['y'], block['z'])
+#     grid_dim = (grid['x'], grid['y'], grid['z'])
+#     return block_dim, grid_dim
+# # 	getOptimalLaunchConfigCustomized(entriesCount,&grid,&block,readLength);
 #
