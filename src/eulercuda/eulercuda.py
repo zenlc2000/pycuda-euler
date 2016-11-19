@@ -13,8 +13,9 @@ import logging.config
 import pycuda.driver
 from graph_tool.all import *
 import collections
-
-pycuda.driver.set_debugging(True)
+import sys
+sys.path.append('/usr/local/cuda-7.5/bin')
+#pycuda.driver.set_debugging(True)
 
 ULONGLONG = 8
 UINTC = 4
@@ -75,7 +76,7 @@ def readLmersKmersCuda(readBuffer, readLength, partitionReadCount, lmerLength, l
     """
 
     """
-    import pyencode as enc
+    import eulercuda.pyencode as enc
     # logger = logging.getLogger(__name__)
     #logger.info("started readLmersKmersCuda.")
     kmerMap = {}
@@ -207,8 +208,8 @@ def constructDebruijnGraph(readBuffer, partitionReadCount, readLength, lmerLengt
     unsigned int * d_entEdge=NULL;
 
     """
-    import pygpuhash as gh
-    import pydebruijn as db
+    import eulercuda.pygpuhash as gh
+    import eulercuda.pydebruijn as db
     logger = logging.getLogger(__name__)
     logger.info('Begin constructing deBruijn graph')
 
@@ -326,80 +327,81 @@ def check_kmers(outfile, length, kmers):
 
 
 def generatePartialContig(outfile, d_ev, vcount, d_ee, ecount, l):
-    logger = logging.getLogger('eulercuda.generatePartialContigs')
-    logger.info("Starting")
-    vert = [v for v in d_ev['vid']]
-    check_kmers('generatePartialContig.tsv', 11, vert )
-    d_contigStart = np.ones(ecount, dtype=np.uintc)
-    d_contigStart = et.identify_contig_start(d_ee, d_contigStart, ecount)
-    h_contigStart = np.copy(d_contigStart)
+	import eulercuda.pyeulertour as et
+	logger = logging.getLogger('eulercuda.generatePartialContigs')
+	logger.info("Starting")
+	vert = [v for v in d_ev['vid']]
+	check_kmers('generatePartialContig.tsv', 11, vert )
+	d_contigStart = np.ones(ecount, dtype=np.uintc)
+	d_contigStart = et.identify_contig_start(d_ee, d_contigStart, ecount)
+	h_contigStart = np.copy(d_contigStart)
+	
+	h_ev = np.zeros(vcount, dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
+	h_ee = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
+	buffer = []
+	h_visited = np.zeros(ecount, dtype=np.uintc)
+	h_ev = np.copy(d_ev)
+	h_ee = np.copy(d_ee)
 
-    h_ev = np.zeros(vcount, dtype=[('vid', np.uintc), ('n1', np.uintc), ('n2', np.uintc)])
-    h_ee = np.zeros(ecount, dtype=[('ceid', np.uintc), ('e1', np.uintc), ('e2', np.uintc), ('c1', np.uintc), ('c2', np.uintc)])
-    buffer = []
-    h_visited = np.zeros(ecount, dtype=np.uintc)
-    h_ev = np.copy(d_ev)
-    h_ee = np.copy(d_ee)
+	count = 0
+	edgeCount = 0
+	next = 0
+	output = []
 
-    count = 0
-    edgeCount = 0
-    next = 0
-    output = []
+	with open(outfile, 'w') as ofile:
+	    for i in range(ecount):
+	        if h_contigStart[i] != 0 and h_visited[i] == 0:
+	            ofile.write('>%u\n' % count)
+	            logger.debug('>%u\n' % count)
+	            count += 1
+	            buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
+	            # ofile.write(''.join(buffer))
+	            # logger.debug(''.join(buffer))
+	            next = i
+	            while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
+	                h_visited[next] = 1
+	                next = h_ee[next]['s']
+	                buffer.append(getString(l - 1, h_ev[h_ee[next]['v1']]['vid'] ))
+	                # ofile.write('%s' % ''.join(buffer) + str(l - 2))
+	                # logger.debug('%s' % ''.join(buffer) + str(l - 2))
+	                edgeCount += 1
+	            if h_visited[next] == 0: # for circular paths
+	                buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
+	                # ofile.write('%s' % buffer + str(l - 2))
+	                # logger.debug('%s' % buffer + str(l - 2))
+	                h_visited[next] = 1
+	                edgeCount += 1
+	            ofile.write(''.join(buffer) + '\n')
+	            output.append(buffer)
+	            buffer = []
 
-    with open(outfile, 'w') as ofile:
-        for i in range(ecount):
-            if h_contigStart[i] != 0 and h_visited[i] == 0:
-                ofile.write('>%u\n' % count)
-                logger.debug('>%u\n' % count)
-                count += 1
-                buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
-                # ofile.write(''.join(buffer))
-                # logger.debug(''.join(buffer))
-                next = i
-                while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
-                    h_visited[next] = 1
-                    next = h_ee[next]['s']
-                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v1']]['vid'] ))
-                    # ofile.write('%s' % ''.join(buffer) + str(l - 2))
-                    # logger.debug('%s' % ''.join(buffer) + str(l - 2))
-                    edgeCount += 1
-                if h_visited[next] == 0: # for circular paths
-                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
-                    # ofile.write('%s' % buffer + str(l - 2))
-                    # logger.debug('%s' % buffer + str(l - 2))
-                    h_visited[next] = 1
-                    edgeCount += 1
-                ofile.write(''.join(buffer) + '\n')
-                output.append(buffer)
-                buffer = []
-
-        for i in range(ecount):
-            if h_visited[i] == 0:
-                ofile.write('>%u\n' % count)
-                logger.debug('>%u\n' % count)
-                count += 1
-                buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
-                # ofile.write(''.join(buffer))
-                # logger.debug(''.join(buffer))
-                next = i
-                while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
-                    h_visited[next] = 1
-                    next = h_ee[next]['s']
-                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v1']]['vid'] ))
-                    # ofile.write('%s' % ''.join(buffer) + str(l - 2))
-                    # logger.debug('%s' % ''.join(buffer) + str(l - 2))
-                    edgeCount += 1
-                if h_visited[next] == 0: # for circular paths
-                    buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
-                    # ofile.write('%s' % buffer + str(l - 2))
-                    # logger.debug('%s' % buffer + str(l - 2))
-                    h_visited[next] = 1
-                    edgeCount += 1
-                ofile.write(''.join(buffer) + '\n')
-                output.append(buffer)
-                buffer = []
-    logger.info("Finished")
-    return output
+	    for i in range(ecount):
+	        if h_visited[i] == 0:
+	            ofile.write('>%u\n' % count)
+	            logger.debug('>%u\n' % count)
+	            count += 1
+	            buffer.append(getString(l -1, h_ev[h_ee[i]['v1']]['vid']))
+	            # ofile.write(''.join(buffer))
+	            # logger.debug(''.join(buffer))
+	            next = i
+	            while h_ee[next]['s'] < ecount and h_visited[h_ee[next]['s']] == 0:
+	                h_visited[next] = 1
+	                next = h_ee[next]['s']
+	                buffer.append(getString(l - 1, h_ev[h_ee[next]['v1']]['vid'] ))
+	                # ofile.write('%s' % ''.join(buffer) + str(l - 2))
+	                # logger.debug('%s' % ''.join(buffer) + str(l - 2))
+	                edgeCount += 1
+	            if h_visited[next] == 0: # for circular paths
+	                buffer.append(getString(l - 1, h_ev[h_ee[next]['v2']]['vid']))
+	                # ofile.write('%s' % buffer + str(l - 2))
+	                # logger.debug('%s' % buffer + str(l - 2))
+	                h_visited[next] = 1
+	                edgeCount += 1
+	            ofile.write(''.join(buffer) + '\n')
+	            output.append(buffer)
+	            buffer = []
+	logger.info("Finished")
+	return output
 
 
 def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, lmerLength, outfile):
@@ -415,7 +417,7 @@ def findEulerTour(d_ev, d_ee, d_levEdge, d_entEdge, edgeCountList, vertexCount, 
     :param outfile:
     :return:
     """
-    import pyeulertour as et
+    import eulercuda.pyeulertour as et
     logger = logging.getLogger("eulercuda.findEulerTour")
     logger.info("Started")
     d_cg_edge = {} # CircuitEdge struct
@@ -506,7 +508,11 @@ def assemble2( lmerLength, buffer = '', readLength=0, readCount=0, infile='', ou
 if __name__ == '__main__':
     """
     """
-    print(os.getpid())
+    import os
+    path = os.environ['PATH']
+    os.environ['PATH'] = '/usr/local/cuda/bin:' + path
+    print('PATH = ' + os.environ['PATH'])
+    print('PID = ' + str(os.getpid()))
     # input("=> ")
     logging.config.fileConfig('logging.cfg')
     logger = logging.getLogger('eulercuda')

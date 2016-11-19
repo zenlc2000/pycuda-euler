@@ -1,0 +1,5 @@
+#! /bin/bash
+
+export PYSPARK_PYTHON="/home/ubuntu/anaconda3/bin/python3.5" #adjust to your Python version
+export PYSPARK_DRIVER_PYTHON=/home/ubuntu/anaconda3/bin/jupyter-notebook
+export PYSPARK_DRIVER_PYTHON_OPTS="--no-browser pyspark" #For security 
